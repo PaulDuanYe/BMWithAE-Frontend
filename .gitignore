@@ -95,11 +95,14 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 
+
 # Runtime / generated (correct paths)
 backend/uploads/
+backend/results/
 code_v_0_1/results/
 
 # Local data files
 *.csv
 *.json
+
 

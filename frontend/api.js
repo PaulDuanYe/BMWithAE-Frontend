@@ -2,7 +2,10 @@
  * BMWithAE Frontend API Client
  */
 
-const API_BASE_URL = 'http://localhost:5001/api';
+// 动态获取 API 地址：如果是本地开发使用 localhost，否则使用当前主机名
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:5001/api'
+  : `http://${window.location.hostname}:5001/api`;
 
 class BMWithAEAPI {
   constructor(baseURL = API_BASE_URL) {

@@ -601,6 +601,30 @@
     </div>
   </div>
 
+  <!-- Iteration History Detail Modal -->
+  <div class="modal" id="historyDetailModal" style="display: none;">
+    <div class="modal-overlay" id="historyDetailModalOverlay"></div>
+    <div class="modal-content modal-content--medium">
+      <div class="modal-header">
+        <h2 id="historyDetailTitle">Iteration Details</h2>
+        <button class="btn btn--icon-only" id="btnCloseHistoryDetail">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body" id="historyDetailBody">
+        <!-- Content will be dynamically populated -->
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn--secondary" id="btnCloseHistoryDetailFooter">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Subgroup Detail View Modal -->
   <div class="modal" id="subgroupDetailModal" style="display: none;">
     <div class="modal-overlay" id="subgroupDetailModalOverlay"></div>
@@ -627,6 +651,49 @@
 
       <div class="modal-footer">
         <button class="btn btn--secondary" id="btnCloseSubgroupDetailFooter">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- View All Subgroups Modal -->
+  <div class="modal" id="viewAllSubgroupsModal" style="display: none;">
+    <div class="modal-overlay" id="viewAllSubgroupsModalOverlay"></div>
+    <div class="modal-content modal-content--large">
+      <div class="modal-header">
+        <h2>All Created Subgroups</h2>
+        <button class="btn btn--icon-only" id="btnCloseViewAllSubgroups">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="subgroups-table-container">
+          <table class="subgroups-table" id="allSubgroupsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Conditions</th>
+                <th>Size</th>
+                <th>Positive Rate</th>
+                <th>Accuracy</th>
+                <th>Precision</th>
+                <th>Recall</th>
+                <th>F1 Score</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="allSubgroupsTableBody">
+              <!-- Will be populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn--secondary" id="btnCloseViewAllSubgroupsFooter">Close</button>
       </div>
     </div>
   </div>
@@ -673,7 +740,20 @@
         
         <!-- Feature Selector -->
         <div class="feature-selector-section">
-          <h3 class="subgroup-section-title">Select Conditions</h3>
+          <div class="feature-selector-header">
+            <h3 class="subgroup-section-title">Select Conditions</h3>
+            <div class="feature-selector-controls">
+              <input type="text" 
+                     id="featureSearchInput" 
+                     class="feature-search-input" 
+                     placeholder="Search features...">
+              <button class="btn btn--icon-only" id="btnToggleFeatureSelector" title="Collapse/Expand">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
           <div class="feature-selector-grid" id="featureSelectorGrid">
             <!-- Will be populated dynamically -->
           </div>
@@ -686,9 +766,24 @@
               Created Subgroups 
               <span class="subgroup-count" id="subgroupCount">0</span>
             </h3>
-            <button class="btn btn--secondary btn--small" id="btnCompareSubgroups" style="display: none;">
-              Compare Selected
-            </button>
+            <div class="subgroup-list-actions">
+              <button class="btn btn--secondary btn--small" id="btnViewAllSubgroups" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                </svg>
+                View All
+              </button>
+              <button class="btn btn--secondary btn--small" id="btnClearAllSubgroups" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Clear All
+              </button>
+            </div>
           </div>
           <div class="subgroup-cards-grid" id="subgroupCardsGrid">
             <div class="subgroups-empty-state">
@@ -770,7 +865,8 @@
       epsilonThreshold: 0,  // epsilon 阈值（绝对值）
       currentConditions: {},  // 当前子群体定义的条件 {feature: value}
       createdSubgroups: [],  // 已创建的子群体列表
-      featureStats: {}  // 特征统计信息
+      featureStats: {},  // 特征统计信息
+      canDownload: false  // 是否可以下载transformation规则
     };
     
     // Initialize API client
@@ -1495,28 +1591,115 @@
       const h = state.history[index];
       if (!h || !h.metrics) {
         alert('No data available for this iteration.');
-          return;
-        }
+        return;
+      }
       
-      const details = `
-Iteration ${h.iteration !== undefined ? h.iteration : index}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Type: ${config.useBiasMitigation && config.useAccuracyEnhancement ? 'Bias Mitigation + Accuracy Enhancement' : config.useBiasMitigation ? 'Bias Mitigation' : 'Accuracy Enhancement'}
-
-Metrics:
-• Overall Fairness: ${h.metrics?.Overall_Fairness?.toFixed(6) || 'N/A'}
-• Accuracy: ${h.metrics?.ACC?.toFixed(6) || 'N/A'}
-• F1 Score: ${h.metrics?.F1?.toFixed(6) || 'N/A'}
-• Recall: ${h.metrics?.Recall?.toFixed(6) || 'N/A'}
-• Precision: ${h.metrics?.Precision?.toFixed(6) || 'N/A'}
-
-${h.selected_attribute ? `Selected Attribute: ${h.selected_attribute}` : ''}
-${h.selected_label_O ? `Protected Attribute: ${h.selected_label_O}` : ''}
-${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.toExponential(3)}` : ''}
-      `.trim();
+      const mode = config.useBiasMitigation && config.useAccuracyEnhancement ? 'BM+AE' : config.useBiasMitigation ? 'BM' : 'AE';
+      const modeFull = config.useBiasMitigation && config.useAccuracyEnhancement ? 'Bias Mitigation + Accuracy Enhancement' : config.useBiasMitigation ? 'Bias Mitigation' : 'Accuracy Enhancement';
       
-      alert(details);
+      // Update modal title
+      $('#historyDetailTitle').textContent = `Iteration ${h.iteration !== undefined ? h.iteration : index} Details`;
+      
+      // Build modal content
+      const modalBody = $('#historyDetailBody');
+      modalBody.innerHTML = `
+        <!-- Main Metrics Cards -->
+        <div class="history-detail-metrics-grid">
+          <div class="history-detail-metric-card">
+            <div class="history-detail-metric-header">
+              <div class="history-detail-metric-icon history-detail-metric-icon--primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="4" x2="12" y2="20"></line>
+                  <line x1="5" y1="7" x2="19" y2="7"></line>
+                  <line x1="6" y1="11" x2="10" y2="11"></line>
+                  <line x1="14" y1="11" x2="18" y2="11"></line>
+                </svg>
+              </div>
+              <div class="history-detail-metric-title">Overall Fairness</div>
+            </div>
+            <div class="history-detail-metric-value">${h.metrics?.Overall_Fairness?.toFixed(6) || 'N/A'}</div>
+          </div>
+
+          <div class="history-detail-metric-card">
+            <div class="history-detail-metric-header">
+              <div class="history-detail-metric-icon history-detail-metric-icon--success">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9 12l2 2 4-4"></path>
+                </svg>
+              </div>
+              <div class="history-detail-metric-title">Accuracy</div>
+            </div>
+            <div class="history-detail-metric-value">${h.metrics?.ACC?.toFixed(6) || 'N/A'}</div>
+          </div>
+
+          <div class="history-detail-metric-card">
+            <div class="history-detail-metric-header">
+              <div class="history-detail-metric-icon history-detail-metric-icon--warning">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+              </div>
+              <div class="history-detail-metric-title">Max Epsilon</div>
+            </div>
+            <div class="history-detail-metric-value">${h.current_max_epsilon !== undefined ? h.current_max_epsilon.toExponential(3) : 'N/A'}</div>
+          </div>
+        </div>
+
+        <!-- Additional Metrics Section -->
+        <div class="history-detail-section">
+          <h4 class="history-detail-section-title">Performance Metrics</h4>
+          <div class="history-detail-info-row">
+            <span class="history-detail-info-label">F1 Score</span>
+            <span class="history-detail-info-value">${h.metrics?.F1?.toFixed(6) || 'N/A'}</span>
+          </div>
+          <div class="history-detail-info-row">
+            <span class="history-detail-info-label">Recall</span>
+            <span class="history-detail-info-value">${h.metrics?.Recall?.toFixed(6) || 'N/A'}</span>
+          </div>
+          <div class="history-detail-info-row">
+            <span class="history-detail-info-label">Precision</span>
+            <span class="history-detail-info-value">${h.metrics?.Precision?.toFixed(6) || 'N/A'}</span>
+          </div>
+        </div>
+
+        ${h.selected_attribute || h.selected_label_O ? `
+        <!-- Iteration Details Section -->
+        <div class="history-detail-section">
+          <h4 class="history-detail-section-title">Iteration Details</h4>
+          ${h.selected_attribute ? `
+          <div class="history-detail-info-row">
+            <span class="history-detail-info-label">Selected Attribute</span>
+            <span class="history-detail-info-value">${h.selected_attribute}</span>
+          </div>
+          ` : ''}
+          ${h.selected_label_O ? `
+          <div class="history-detail-info-row">
+            <span class="history-detail-info-label">Protected Attribute</span>
+            <span class="history-detail-info-value">${h.selected_label_O}</span>
+          </div>
+          ` : ''}
+        </div>
+        ` : ''}
+      `;
+      
+      // Show modal
+      const modal = $('#historyDetailModal');
+      modal.style.display = 'flex';
     }
+
+    // Close history detail modal
+    function closeHistoryDetailModal() {
+      const modal = $('#historyDetailModal');
+      modal.style.display = 'none';
+    }
+
+    // Setup history detail modal events
+    $('#btnCloseHistoryDetail').addEventListener('click', closeHistoryDetailModal);
+    $('#btnCloseHistoryDetailFooter').addEventListener('click', closeHistoryDetailModal);
+    $('#historyDetailModalOverlay').addEventListener('click', closeHistoryDetailModal);
 
     async function runAllSteps() {
       if (!state.datasetId) {
@@ -1708,10 +1891,12 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
                 logPath: data.log_path
               });
               
-              // 重置按钮
-              $('#runBtnText').textContent = 'Run';
+              // 改变按钮为下载按钮
+              $('#runBtnText').textContent = 'Download Transforms';
               $('#btnRun').disabled = false;
+              $('#btnRun').classList.add('btn--download');
               state.isRunning = false;
+              state.canDownload = true;
             } else if (data.state === 'failed') {
               clearInterval(pollInterval);
               pollInterval = null;
@@ -1877,6 +2062,31 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
       // Open log file in new window or show in modal
       alert(`Experiment log saved at:\n${state.logPath}\n\nYou can find this file in the backend/logs folder.`);
     }
+    
+    // Download transformation rules
+    async function downloadTransformationRules() {
+      if (!state.jobId) {
+        alert('No job available. Please run debiasing first.');
+        return;
+      }
+      
+      try {
+        const url = `${API_BASE_URL}/debias/${state.jobId}/download_transforms`;
+        
+        // Create a temporary anchor element to trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transforms_${state.jobId.substring(0, 8)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        console.log('[INFO] Transformation rules download initiated');
+      } catch (err) {
+        console.error('[ERROR] Failed to download transformation rules:', err);
+        alert(`Failed to download transformation rules: ${err.message}`);
+      }
+    }
 
     function resetProcess() {
       // 清除轮询
@@ -1896,10 +2106,12 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
       state.logPath = null;
       state.maxEpsilonSeries = [];
       state.epsilonThreshold = 0;
+      state.canDownload = false;
       hideLogDownloadButton();
       updateProcessStatus('Ready');
       $('#runBtnText').textContent = 'Run';
       $('#btnRun').disabled = false;
+      $('#btnRun').classList.remove('btn--download');
       
       const processContent = $('#processContent');
       processContent.innerHTML = `
@@ -1985,6 +2197,12 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
 
     // Process Controls
     $('#btnRun').addEventListener('click', () => {
+      // Check if in download mode
+      if (state.canDownload) {
+        downloadTransformationRules();
+        return;
+      }
+      
       if (!state.currentData && !state.currentFile) {
         alert('Please load a dataset first.');
         return;
@@ -2121,8 +2339,9 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
         checkbox.value = attr;
         checkbox.className = 'protected-attr-checkbox';
         
-        // Auto-select priority attributes
-        if (priorityFeatures.includes(attr)) {
+        // Auto-select only SEX and MARRIAGE by default (not AGE)
+        const defaultSelected = ['SEX', 'MARRIAGE'];
+        if (defaultSelected.includes(attr.toUpperCase())) {
           checkbox.checked = true;
           itemDiv.classList.add('checked');
         }
@@ -2741,24 +2960,24 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
             type: 'categorical'
           }));
         } else if (stats.type === 'continuous') {
-          // Continuous: create bins
-          const min = stats.min || 0;
-          const max = stats.max || 1;
-          const range = max - min;
+          // Continuous: create bins with counts from backend
+          const binCounts = stats.bin_counts || {};
+          const binRanges = stats.bin_ranges || {};
           
-          const bins = [
-            { label: `Low (${min.toFixed(1)}-${(min + range/3).toFixed(1)})`, value: 'Low', min: min, max: min + range/3 },
-            { label: `Medium (${(min + range/3).toFixed(1)}-${(min + 2*range/3).toFixed(1)})`, value: 'Medium', min: min + range/3, max: min + 2*range/3 },
-            { label: `High (${(min + 2*range/3).toFixed(1)}-${max.toFixed(1)})`, value: 'High', min: min + 2*range/3, max: max }
-          ];
+          // Use backend-calculated bins if available
+          const bins = ['Low', 'Medium', 'High'].map(binName => {
+            const range = binRanges[binName] || '';
+            const count = binCounts[binName] || 0;
+            return {
+              label: `${binName} ${range}`,
+              value: `${binName} ${range}`,
+              rawValue: binName,
+              count: count,
+              type: 'continuous'
+            };
+          });
           
-          values = bins.map(bin => ({
-            value: bin.label,
-            rawValue: bin.value,
-            min: bin.min,
-            max: bin.max,
-            type: 'continuous'
-          }));
+          values = bins.filter(bin => bin.count > 0); // Only show bins with samples
         }
         
         return `
@@ -2790,6 +3009,60 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
       
       // Setup add subgroup button
       $('#btnAddSubgroup').addEventListener('click', addCurrentSubgroup);
+      
+      // Setup toggle collapse/expand button
+      setupFeatureSelectorToggle();
+      
+      // Setup search functionality
+      setupFeatureSearch();
+    }
+    
+    // Setup feature selector toggle (collapse/expand)
+    function setupFeatureSelectorToggle() {
+      const toggleBtn = $('#btnToggleFeatureSelector');
+      const grid = $('#featureSelectorGrid');
+      const searchInput = $('#featureSearchInput');
+      
+      toggleBtn.addEventListener('click', () => {
+        const isCollapsed = grid.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+          // Expand
+          grid.classList.remove('collapsed');
+          toggleBtn.classList.remove('collapsed');
+          searchInput.style.display = 'block';
+        } else {
+          // Collapse
+          grid.classList.add('collapsed');
+          toggleBtn.classList.add('collapsed');
+          searchInput.style.display = 'none';
+        }
+      });
+    }
+    
+    // Setup feature search functionality
+    function setupFeatureSearch() {
+      const searchInput = $('#featureSearchInput');
+      
+      searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        const featureCards = document.querySelectorAll('.feature-selector-card');
+        
+        featureCards.forEach(card => {
+          const featureTitle = card.querySelector('.feature-selector-card-title');
+          const featureName = featureTitle ? featureTitle.textContent.toLowerCase() : '';
+          
+          if (featureName.includes(searchTerm)) {
+            card.style.display = 'block';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+        
+        // Show count of visible features
+        const visibleCount = Array.from(featureCards).filter(card => card.style.display !== 'none').length;
+        console.log(`[INFO] Showing ${visibleCount} of ${featureCards.length} features`);
+      });
     }
     
     // Toggle condition selection
@@ -2893,8 +3166,19 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
     function updateSubgroupsDisplay() {
       const container = $('#subgroupCardsGrid');
       const countEl = $('#subgroupCount');
+      const btnViewAll = $('#btnViewAllSubgroups');
+      const btnClearAll = $('#btnClearAllSubgroups');
       
       countEl.textContent = state.createdSubgroups.length;
+      
+      // Show/hide action buttons based on subgroup count
+      if (state.createdSubgroups.length > 0) {
+        btnViewAll.style.display = 'flex';
+        btnClearAll.style.display = 'flex';
+      } else {
+        btnViewAll.style.display = 'none';
+        btnClearAll.style.display = 'none';
+      }
       
       if (state.createdSubgroups.length === 0) {
         container.innerHTML = '<div class="subgroups-empty-state"><p>No subgroups created yet. Define conditions above and click "Add Subgroup".</p></div>';
@@ -2967,19 +3251,105 @@ ${h.current_max_epsilon !== undefined ? `Max Epsilon: ${h.current_max_epsilon.to
       updateSubgroupsDisplay();
     }
     
+    // Clear all subgroups
+    function clearAllSubgroups() {
+      if (confirm(`Are you sure you want to delete all ${state.createdSubgroups.length} subgroups?`)) {
+        state.createdSubgroups = [];
+        updateSubgroupsDisplay();
+        console.log('[INFO] All subgroups cleared');
+      }
+    }
+    
+    // View all subgroups in table format
+    function openViewAllSubgroupsModal() {
+      const modal = $('#viewAllSubgroupsModal');
+      const tbody = $('#allSubgroupsTableBody');
+      
+      // Populate table
+      tbody.innerHTML = state.createdSubgroups.map((subgroup, index) => {
+        const metrics = subgroup.metrics || {};
+        const positiveRate = metrics.positive_rate || 'N/A';
+        const positiveRateDisplay = positiveRate !== 'N/A' ? (positiveRate * 100).toFixed(2) + '%' : 'N/A';
+        
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${subgroup.conditionsText}">${subgroup.conditionsText}</td>
+            <td>${metrics.size || 'N/A'}</td>
+            <td>${positiveRateDisplay}</td>
+            <td>${metrics.accuracy || 'N/A'}</td>
+            <td>${metrics.precision || 'N/A'}</td>
+            <td>${metrics.recall || 'N/A'}</td>
+            <td>${metrics.f1 || 'N/A'}</td>
+            <td class="subgroups-table-actions">
+              <button class="btn btn--small btn--secondary" onclick="showSubgroupDetailViewFromTable(${index})" title="View Details">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <button class="btn btn--small btn--danger" onclick="removeSubgroupFromTable(${index})" title="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      
+      modal.style.display = 'flex';
+    }
+    
+    // Close view all subgroups modal
+    function closeViewAllSubgroupsModal() {
+      const modal = $('#viewAllSubgroupsModal');
+      modal.style.display = 'none';
+    }
+    
+    // Show subgroup detail view from table
+    function showSubgroupDetailViewFromTable(index) {
+      closeViewAllSubgroupsModal();
+      showSubgroupDetailView(index);
+    }
+    
+    // Remove subgroup from table view
+    function removeSubgroupFromTable(index) {
+      if (confirm(`Delete Subgroup ${index + 1}?`)) {
+        removeSubgroup(index);
+        // If modal is still open, refresh the table
+        if ($('#viewAllSubgroupsModal').style.display === 'flex') {
+          openViewAllSubgroupsModal();
+        }
+      }
+    }
+    
+    // Setup view all subgroups button events
+    $('#btnViewAllSubgroups').addEventListener('click', openViewAllSubgroupsModal);
+    $('#btnClearAllSubgroups').addEventListener('click', clearAllSubgroups);
+    $('#btnCloseViewAllSubgroups').addEventListener('click', closeViewAllSubgroupsModal);
+    $('#btnCloseViewAllSubgroupsFooter').addEventListener('click', closeViewAllSubgroupsModal);
+    $('#viewAllSubgroupsModalOverlay').addEventListener('click', closeViewAllSubgroupsModal);
+    
     // Fetch subgroup metrics from API
     async function fetchSubgroupMetricsAPI(conditions) {
       try {
         const response = await api.getSubgroupMetrics(state.datasetId, conditions);
         if (response.status === 'success') {
           const data = response.data;
+          const metrics = data.subgroup_metrics;
           return {
             size: data.subgroup_size,
-            accuracy: data.subgroup_metrics.accuracy.toFixed(4),
-            precision: data.subgroup_metrics.precision.toFixed(4),
-            recall: data.subgroup_metrics.recall.toFixed(4),
-            f1: data.subgroup_metrics.f1.toFixed(4),
-            fpr: data.subgroup_metrics.fpr.toFixed(4),
+            positive_rate: metrics.positive_rate,
+            positive_samples: metrics.positive_samples,
+            negative_samples: metrics.negative_samples,
+            accuracy: metrics.accuracy ? metrics.accuracy.toFixed(4) : 'N/A',
+            precision: metrics.precision ? metrics.precision.toFixed(4) : 'N/A',
+            recall: metrics.recall ? metrics.recall.toFixed(4) : 'N/A',
+            f1: metrics.f1 ? metrics.f1.toFixed(4) : 'N/A',
+            fpr: metrics.fpr ? metrics.fpr.toFixed(4) : 'N/A',
+            note: metrics.note || '',
             overall_metrics: data.overall_metrics
           };
         } else {

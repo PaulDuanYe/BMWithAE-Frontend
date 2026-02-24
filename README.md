@@ -122,7 +122,7 @@ Professional-grade visualizations for comprehensive model understanding:
 1. Clone the repository
 
 ```bash
-git clone https://github.com/KuumaSan/BMWithAE.git
+git clone https://github.com/PaulDuanYe/BMWithAE.git
 cd BMWithAE
 ```
 
