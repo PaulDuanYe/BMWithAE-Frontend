@@ -3,10 +3,11 @@ module_transform.py
 =================
 This module provides a Transform class for transforming datasets based on a specified changed_dict.
 The class handles both numerical and categorical attributes, applying transformations
-as defined in the changed_dict parameter.
+as defined in the changed_dict parameter. Also handles feature scaling when required by the model.
 """
 import numpy as np
-from core_config import PARAMS_MAIN_ALPHA_O, PARAMS_TRANSFORM_STREAM_CONFIG, PARAMS_TRANSFORM_STREAM, PARAMS_TRANSFORM, PARAMS_TRANSFORM_MULTI
+from sklearn.preprocessing import StandardScaler
+from core_config import PARAMS_MAIN_ALPHA_O, PARAMS_TRANSFORM_STREAM_CONFIG, PARAMS_TRANSFORM_STREAM, PARAMS_TRANSFORM, PARAMS_TRANSFORM_MULTI, PARAMS_MAIN_CLASSIFIER
 
 
 class Transform:
@@ -15,19 +16,40 @@ class Transform:
     
     This class transforms data according to the provided changed_dict,
     which defines transformations for numerical and categorical attributes.
+    Also handles feature scaling for models that require it.
     """
+    
+    # Models that require feature scaling (gradient-based or distance-based)
+    MODELS_REQUIRING_SCALING = {'LR', 'SVM', 'KNN', 'MLP', 'LDA', 'QDA'}
     
     def __init__(self):
         """
         Initialize a new Transform instance.
         
         Automatically generates stream data based on configurations from config.py.
+        Initializes scaler if the current model requires it.
         """
         # Generate stream_data based on stream_name from config.py
         self.stream_data = self.gen_stream(PARAMS_TRANSFORM_STREAM, **PARAMS_TRANSFORM_STREAM_CONFIG)
 
         # Validate and set alpha_O parameter from config.py
         self.alpha_O = PARAMS_MAIN_ALPHA_O if 0 < PARAMS_MAIN_ALPHA_O < 1 else 0.8
+        
+        # Initialize scaler if current model requires it
+        self.scaler = None
+        self.scaler_fitted = False
+        if self._model_requires_scaling():
+            self.scaler = StandardScaler()
+    
+    @staticmethod
+    def _model_requires_scaling():
+        """
+        Check if the current classifier requires feature scaling.
+        
+        Returns:
+            bool: True if the model requires scaling, False otherwise
+        """
+        return PARAMS_MAIN_CLASSIFIER in Transform.MODELS_REQUIRING_SCALING
 
 
     def _cal_beta_value(self, df_temp_attr, beta_value):
@@ -42,14 +64,18 @@ class Transform:
             Transformed attribute data
         """
         if PARAMS_TRANSFORM == 'poly':
-            return (df_temp_attr.astype(object).abs() ** beta_value) * (df_temp_attr.apply(np.sign))
+            # Apply polynomial transformation: |x|^beta * sign(x)
+            result = (df_temp_attr.abs() ** beta_value) * (df_temp_attr.apply(np.sign))
+            return result.astype(float)  # Ensure float type for consistency
         elif PARAMS_TRANSFORM == 'log':
-            return np.abs(np.log(df_temp_attr.abs() + 1e-5) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
+            result = np.abs(np.log(df_temp_attr.abs() + 1e-5) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
+            return result.astype(float)
         elif PARAMS_TRANSFORM == 'arcsin':
             max_value = df_temp_attr.abs().max()
             min_value = df_temp_attr.abs().min()
-            df_temp_attr = 2 * (df_temp_attr - min_value) / (max_value - min_value) - 1
-            return (np.arcsin(df_temp_attr.astype(object).abs() / max_value) ** beta_value) * (df_temp_attr.apply(np.sign))
+            df_temp_attr_norm = 2 * (df_temp_attr - min_value) / (max_value - min_value) - 1
+            result = (np.arcsin(df_temp_attr_norm.abs() / max_value) ** beta_value) * (df_temp_attr_norm.apply(np.sign))
+            return result.astype(float)
         else:
             raise ValueError(f"Invalid transform method: {PARAMS_TRANSFORM}")
 
@@ -145,9 +171,10 @@ class Transform:
         return transformed_attr
 
 
-    def transform_data(self, X, changed_dict, num_attrs, cate_attrs):
+    def transform_data(self, X, changed_dict, num_attrs, cate_attrs, fit_scaler=False):
         """
         Transform the dataset according to the specified changed_dict.
+        Also applies feature scaling if the model requires it.
         
         Parameters:
             X: DataFrame to be transformed
@@ -155,15 +182,22 @@ class Transform:
                           Format: {attribute_name: transformation_parameters}
             num_attrs: List of numerical attribute names
             cate_attrs: List of categorical attribute names
+            fit_scaler: Whether to fit the scaler (True for training, False for inference)
             
         Returns:
             pandas.DataFrame: Transformed dataset
         """
+        import pandas as pd
+        
         # Create a copy of the data to avoid modifying the original
         df_data_temp = X.copy()
 
-        # Process each attribute specified in changed_dict
+        # Step 1: Apply attribute-specific transformations from changed_dict
         for attribute in changed_dict.keys():
+            # Skip scaler params (handled separately)
+            if attribute == '__scaler__':
+                continue
+                
             df_temp_attr = df_data_temp[attribute]
             change = changed_dict[attribute]
 
@@ -185,7 +219,60 @@ class Transform:
             # Update the attribute in the temporary DataFrame
             df_data_temp[attribute] = df_temp_attr
 
+        # Step 2: Apply feature scaling if required by the model
+        if self.scaler is not None:
+            if fit_scaler:
+                # Fit and transform (for training data)
+                df_data_temp = pd.DataFrame(
+                    self.scaler.fit_transform(df_data_temp),
+                    columns=df_data_temp.columns,
+                    index=df_data_temp.index
+                )
+                self.scaler_fitted = True
+                
+                # Store scaler parameters in changed_dict for reproducibility
+                if '__scaler__' not in changed_dict:
+                    changed_dict['__scaler__'] = {}
+                changed_dict['__scaler__']['mean_'] = self.scaler.mean_.tolist()
+                changed_dict['__scaler__']['scale_'] = self.scaler.scale_.tolist()
+                changed_dict['__scaler__']['var_'] = self.scaler.var_.tolist()
+                changed_dict['__scaler__']['n_features_in_'] = int(self.scaler.n_features_in_)
+                changed_dict['__scaler__']['feature_names'] = df_data_temp.columns.tolist()
+                
+            elif self.scaler_fitted:
+                # Only transform (for test/new data)
+                df_data_temp = pd.DataFrame(
+                    self.scaler.transform(df_data_temp),
+                    columns=df_data_temp.columns,
+                    index=df_data_temp.index
+                )
+            else:
+                # Scaler exists but not fitted yet - try to load from changed_dict
+                if '__scaler__' in changed_dict:
+                    self._load_scaler_from_dict(changed_dict['__scaler__'])
+                    df_data_temp = pd.DataFrame(
+                        self.scaler.transform(df_data_temp),
+                        columns=df_data_temp.columns,
+                        index=df_data_temp.index
+                    )
+                # else: First time, will be fitted on next call with fit_scaler=True
+
         return df_data_temp
+    
+    def _load_scaler_from_dict(self, scaler_params):
+        """
+        Load scaler parameters from a dictionary.
+        
+        Parameters:
+            scaler_params: Dictionary containing scaler parameters
+        """
+        import numpy as np
+        if self.scaler is not None and scaler_params:
+            self.scaler.mean_ = np.array(scaler_params['mean_'])
+            self.scaler.scale_ = np.array(scaler_params['scale_'])
+            self.scaler.var_ = np.array(scaler_params['var_'])
+            self.scaler.n_features_in_ = scaler_params['n_features_in_']
+            self.scaler_fitted = True
 
 
     def check_transform_validity(self, X, attribute, change, num_attrs, cate_attrs):
@@ -212,10 +299,12 @@ class Transform:
                 
                 # Check for infinity values
                 if df_transformed_attr.isin([np.inf, -np.inf]).any():
+                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Contains infinity values")
                     return False
                       
                 # Check for valid data types
                 if not np.issubdtype(df_transformed_attr.dtype, np.number):
+                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Invalid data type {df_transformed_attr.dtype}")
                     return False
             
             elif attribute in cate_attrs:
@@ -223,11 +312,16 @@ class Transform:
                 
                 # Check for single unique value
                 if df_transformed_attr.nunique() == 1:
+                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Only single unique value after transformation")
                     return False
                 
         except Exception as e:
+            print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Exception {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
             
+        print(f"[DEBUG] check_transform_validity PASSED for {attribute} with change {change}")
         return True
 
 

@@ -27,7 +27,7 @@ DEMO_DATASETS = {
     'credit': {
         'path': os.path.join(PROJECT_ROOT, 'data', 'credit.xlsx'),
         'target': 'default payment next month',
-        'protected': ['SEX', 'MARRIAGE'],
+        'protected': ['SEX', 'MARRIAGE'],  # Default: only SEX and MARRIAGE, not AGE
         'description': 'Credit Card Default Dataset'
     },
     'compas': {

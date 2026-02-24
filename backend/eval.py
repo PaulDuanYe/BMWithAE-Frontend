@@ -92,7 +92,8 @@ class Evaluator:
             print(f"Using classifier: {PARAMS_MAIN_CLASSIFIER}")
 
         if PARAMS_MAIN_CLASSIFIER == 'LR':
-            return LogisticRegression(random_state=SEED)
+            # StandardScaler is now handled by Transform class, not here
+            return LogisticRegression(random_state=SEED, max_iter=1000)
         elif PARAMS_MAIN_CLASSIFIER == 'DT':
             return DecisionTreeClassifier(random_state=SEED)
         elif PARAMS_MAIN_CLASSIFIER == 'KNN':
@@ -141,8 +142,38 @@ class Evaluator:
         # First training: full dataset
         if self.first_train:
             if VERBOSE:
-                print("First training, using full dataset")
+                import sys
+                print("First training, using full dataset", flush=True, file=sys.stderr)
+                print(f"[DEBUG] Training data - X shape: {X.shape}, Y shape: {Y.shape}", flush=True, file=sys.stderr)
+                print(f"[DEBUG] Y value counts: {Y.value_counts().to_dict()}", flush=True, file=sys.stderr)
+                print(f"[DEBUG] X columns: {X.columns.tolist()}", flush=True, file=sys.stderr)
+                print(f"[DEBUG] X first row: {X.iloc[0].to_dict()}", flush=True, file=sys.stderr)
+            
             self.model.fit(X, Y)
+            
+            if VERBOSE:
+                import sys
+                # Test prediction on training data
+                y_train_pred = self.model.predict(X[:100])  # Test on first 100 samples
+                print(f"[DEBUG] After training - prediction on first 100 training samples: {pd.Series(y_train_pred).value_counts().to_dict()}", flush=True, file=sys.stderr)
+                
+                # Check if model is Pipeline (with StandardScaler) or direct classifier
+                if hasattr(self.model, 'named_steps'):
+                    # Pipeline with StandardScaler
+                    actual_model = self.model.named_steps['classifier']
+                    print(f"[DEBUG] Using StandardScaler pipeline", flush=True, file=sys.stderr)
+                else:
+                    actual_model = self.model
+                    print(f"[DEBUG] Using raw model (no scaling)", flush=True, file=sys.stderr)
+                
+                if hasattr(actual_model, 'coef_'):
+                    print(f"[DEBUG] Model coefficients shape: {actual_model.coef_.shape}", flush=True, file=sys.stderr)
+                    print(f"[DEBUG] Model intercept: {actual_model.intercept_}", flush=True, file=sys.stderr)
+                    coef_abs_mean = np.abs(actual_model.coef_).mean()
+                    coef_abs_max = np.abs(actual_model.coef_).max()
+                    coef_abs_min = np.abs(actual_model.coef_).min()
+                    print(f"[DEBUG] Coefficient stats - mean: {coef_abs_mean:.6f}, max: {coef_abs_max:.6f}, min: {coef_abs_min:.6f}", flush=True, file=sys.stderr)
+            
             self.first_train = False
         else:
             # Subsequent training: sample according to PARAMS_MAIN_TRAINING_RATE
@@ -227,6 +258,11 @@ class Evaluator:
                 results_data[self.label_O] = O_test
         
         self.results_df = pd.DataFrame(results_data)
+        
+        if VERBOSE:
+            import sys
+            pred_dist = self.results_df['pred_Y'].value_counts().to_dict()
+            print(f"[DEBUG] Prediction distribution: {pred_dist}", flush=True, file=sys.stderr)
     
     @staticmethod
     def _confusion_counts(df):
@@ -347,7 +383,12 @@ class Evaluator:
         for group_a, group_b in group_pairs:
             stats_a = self._confusion_counts(self.results_df[self.results_df[label_O] == group_a])
             stats_b = self._confusion_counts(self.results_df[self.results_df[label_O] == group_b])
-            vals.append(abs(stats_a['TPR'] - stats_b['TPR']))
+            tpr_diff = abs(stats_a['TPR'] - stats_b['TPR'])
+            vals.append(tpr_diff)
+            if VERBOSE and tpr_diff == 0:
+                import sys
+                print(f"[DEBUG] EOpp=0 for {label_O}: group {group_a} TPR={stats_a['TPR']:.6f}, group {group_b} TPR={stats_b['TPR']:.6f}", 
+                      flush=True, file=sys.stderr)
         return sum(vals) / len(vals) if vals else 0.0
     
     def _calculate_eo(self, label_O, group_pairs):
@@ -511,7 +552,12 @@ class Evaluator:
         for group_a, group_b in group_pairs:
             stats_a = self._confusion_counts(self.results_df[self.results_df[label_O] == group_a])
             stats_b = self._confusion_counts(self.results_df[self.results_df[label_O] == group_b])
-            vals.append(abs(stats_a['PPOS'] - stats_b['PPOS']))
+            ppos_diff = abs(stats_a['PPOS'] - stats_b['PPOS'])
+            vals.append(ppos_diff)
+            if VERBOSE and ppos_diff == 0:
+                import sys
+                print(f"[DEBUG] SP=0 for {label_O}: group {group_a} PPOS={stats_a['PPOS']:.6f}, group {group_b} PPOS={stats_b['PPOS']:.6f}", 
+                      flush=True, file=sys.stderr)
         return sum(vals) / len(vals) if vals else 0.0
     
     def _calculate_acc(self, confusion_stats=None):
@@ -645,7 +691,11 @@ class Evaluator:
         self.metrics_results = {**classifier_metrics, **fairness_metrics}
         
         if VERBOSE:
-            print("Metrics calculated successfully")
+            import sys
+            print("Metrics calculated successfully", flush=True, file=sys.stderr)
+            print(f"[DEBUG] Fairness metrics structure:", flush=True, file=sys.stderr)
+            for metric_name, metric_value in fairness_metrics.items():
+                print(f"  {metric_name}: {metric_value}", flush=True, file=sys.stderr)
         
         return self.metrics_results
     

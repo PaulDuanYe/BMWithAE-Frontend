@@ -38,6 +38,7 @@ os.makedirs(backend_config.LOGS_FOLDER, exist_ok=True)
 datasets = {}  # dataset_id -> data dict
 jobs = {}      # job_id -> job info
 current_config = {}  # Current configuration
+dataset_models = {}  # dataset_id -> trained model (cache for subgroup analysis)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in backend_config.ALLOWED_EXTENSIONS
@@ -246,6 +247,10 @@ def upload_data():
         if not target_column or target_column not in df.columns:
             return jsonify({'status': 'error', 'message': 'Invalid target column'}), 400
         
+        # Clear cached model for this dataset if it exists
+        if dataset_id in dataset_models:
+            del dataset_models[dataset_id]
+        
         # Store dataset info
         datasets[dataset_id] = {
             'filepath': filepath,
@@ -292,6 +297,10 @@ def load_demo():
         df = load_file_to_dataframe(filepath)
         
         dataset_id = f"demo_{dataset_name}"
+        
+        # Clear cached model for this dataset if it exists
+        if dataset_id in dataset_models:
+            del dataset_models[dataset_id]
         
         # Store dataset info with original relative path
         # (will be converted to absolute path when needed)
@@ -454,11 +463,40 @@ def get_dataset_info(dataset_id):
             }
             
             if feature_types[col] == 'continuous':
+                min_val = float(df[col].min()) if not pd.isna(df[col].min()) else 0
+                max_val = float(df[col].max()) if not pd.isna(df[col].max()) else 1
+                mean_val = float(df[col].mean()) if not pd.isna(df[col].mean()) else None
+                std_val = float(df[col].std()) if not pd.isna(df[col].std()) else None
+                
+                # Calculate bin counts for Low/Medium/High
+                range_val = max_val - min_val
+                bin_edges = [
+                    min_val,
+                    min_val + range_val / 3,
+                    min_val + 2 * range_val / 3,
+                    max_val
+                ]
+                
+                # Count samples in each bin
+                low_count = int(((df[col] >= bin_edges[0]) & (df[col] < bin_edges[1])).sum())
+                medium_count = int(((df[col] >= bin_edges[1]) & (df[col] < bin_edges[2])).sum())
+                high_count = int(((df[col] >= bin_edges[2]) & (df[col] <= bin_edges[3])).sum())
+                
                 stats.update({
-                    'min': float(df[col].min()) if not pd.isna(df[col].min()) else None,
-                    'max': float(df[col].max()) if not pd.isna(df[col].max()) else None,
-                    'mean': float(df[col].mean()) if not pd.isna(df[col].mean()) else None,
-                    'std': float(df[col].std()) if not pd.isna(df[col].std()) else None
+                    'min': min_val,
+                    'max': max_val,
+                    'mean': mean_val,
+                    'std': std_val,
+                    'bin_counts': {
+                        'Low': low_count,
+                        'Medium': medium_count,
+                        'High': high_count
+                    },
+                    'bin_ranges': {
+                        'Low': f"({min_val:.1f}-{bin_edges[1]:.1f})",
+                        'Medium': f"({bin_edges[1]:.1f}-{bin_edges[2]:.1f})",
+                        'High': f"({bin_edges[2]:.1f}-{max_val:.1f})"
+                    }
                 })
             else:
                 # Get value counts for categorical features
@@ -574,7 +612,28 @@ def get_subgroup_metrics(dataset_id):
         for feature, value in conditions.items():
             if feature not in df.columns:
                 return jsonify({'status': 'error', 'message': f'Feature {feature} not found'}), 400
-            filtered_df = filtered_df[filtered_df[feature] == value]
+            
+            # Check if value is a range string like "Low (-165580.0-211117.0)"
+            import re
+            range_match = re.match(r'^(Low|Medium|High)\s*\(([+-]?[\d.]+)-([+-]?[\d.]+)\)$', str(value))
+            
+            if range_match:
+                # Range condition for continuous features
+                label, min_val, max_val = range_match.groups()
+                min_val = float(min_val)
+                max_val = float(max_val)
+                filtered_df = filtered_df[(filtered_df[feature] >= min_val) & (filtered_df[feature] < max_val)]
+            else:
+                # Exact match for categorical features
+                # Try to convert value to appropriate type
+                try:
+                    # Try numeric conversion
+                    if pd.api.types.is_numeric_dtype(df[feature]):
+                        value = float(value) if '.' in str(value) else int(value)
+                except (ValueError, TypeError):
+                    pass  # Keep as string
+                
+                filtered_df = filtered_df[filtered_df[feature] == value]
         
         # Calculate subgroup size
         subgroup_size = len(filtered_df)
@@ -583,78 +642,77 @@ def get_subgroup_metrics(dataset_id):
         if subgroup_size == 0:
             return jsonify({'status': 'error', 'message': 'No samples match the specified conditions'}), 400
         
-        # Calculate overall metrics for comparison
+        # Calculate metrics directly from true labels (no model prediction needed)
+        # Since we have labeled data, we can calculate actual statistics
         from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-        from sklearn.model_selection import train_test_split
-        from sklearn.linear_model import LogisticRegression
         
-        # Prepare data
-        X = df.drop(columns=[target_col])
-        y = df[target_col]
+        # Get overall dataset statistics
+        y_overall = df[target_col]
+        positive_rate_overall = float(y_overall.sum() / len(y_overall))
         
-        # Convert categorical columns to numeric
-        X_encoded = pd.get_dummies(X, drop_first=True)
-        
-        # Train a simple model on overall data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_encoded, y, test_size=0.3, random_state=42, stratify=y if len(y.unique()) > 1 else None
-        )
-        
-        model = LogisticRegression(max_iter=1000, random_state=42)
-        model.fit(X_train, y_train)
-        
-        # Calculate overall metrics
-        y_pred_overall = model.predict(X_test)
         overall_metrics = {
-            'accuracy': float(accuracy_score(y_test, y_pred_overall)),
-            'precision': float(precision_score(y_test, y_pred_overall, average='binary', zero_division=0)),
-            'recall': float(recall_score(y_test, y_pred_overall, average='binary', zero_division=0)),
-            'f1': float(f1_score(y_test, y_pred_overall, average='binary', zero_division=0))
+            'positive_rate': positive_rate_overall,
+            'negative_rate': float(1 - positive_rate_overall),
+            'total_samples': int(len(y_overall)),
+            'positive_samples': int(y_overall.sum()),
+            'negative_samples': int(len(y_overall) - y_overall.sum())
         }
         
-        # Calculate FPR for overall
-        try:
-            cm_overall = confusion_matrix(y_test, y_pred_overall)
-            if cm_overall.shape == (2, 2):
-                tn, fp, fn, tp = cm_overall.ravel()
-                overall_metrics['fpr'] = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
-            else:
-                overall_metrics['fpr'] = 0.0
-        except:
-            overall_metrics['fpr'] = 0.0
-        
-        # Calculate subgroup metrics
-        X_subgroup = filtered_df.drop(columns=[target_col])
+        # Calculate subgroup statistics
         y_subgroup = filtered_df[target_col]
         
-        # Encode subgroup data (use same columns as training data)
-        X_subgroup_encoded = pd.get_dummies(X_subgroup, drop_first=True)
-        # Align columns with training data
-        for col in X_encoded.columns:
-            if col not in X_subgroup_encoded.columns:
-                X_subgroup_encoded[col] = 0
-        X_subgroup_encoded = X_subgroup_encoded[X_encoded.columns]
+        # Log subgroup label distribution for debugging
+        unique_labels = y_subgroup.unique()
+        label_counts = y_subgroup.value_counts().to_dict()
+        print(f"[DEBUG] Subgroup labels: {unique_labels}, counts: {label_counts}")
         
-        # Predict on subgroup
-        y_pred_subgroup = model.predict(X_subgroup_encoded)
+        # Calculate subgroup statistics
+        positive_count = int(y_subgroup.sum())
+        negative_count = int(len(y_subgroup) - positive_count)
+        positive_rate = float(positive_count / len(y_subgroup)) if len(y_subgroup) > 0 else 0.0
         
         subgroup_metrics = {
-            'accuracy': float(accuracy_score(y_subgroup, y_pred_subgroup)),
-            'precision': float(precision_score(y_subgroup, y_pred_subgroup, average='binary', zero_division=0)),
-            'recall': float(recall_score(y_subgroup, y_pred_subgroup, average='binary', zero_division=0)),
-            'f1': float(f1_score(y_subgroup, y_pred_subgroup, average='binary', zero_division=0))
+            'positive_rate': positive_rate,
+            'negative_rate': float(1 - positive_rate),
+            'positive_samples': positive_count,
+            'negative_samples': negative_count,
+            'total_samples': int(len(y_subgroup))
         }
         
-        # Calculate FPR for subgroup
-        try:
-            cm_subgroup = confusion_matrix(y_subgroup, y_pred_subgroup)
-            if cm_subgroup.shape == (2, 2):
-                tn, fp, fn, tp = cm_subgroup.ravel()
-                subgroup_metrics['fpr'] = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
-            else:
-                subgroup_metrics['fpr'] = 0.0
-        except:
+        # Calculate relative metrics (compared to overall)
+        subgroup_metrics['positive_rate_ratio'] = float(positive_rate / positive_rate_overall) if positive_rate_overall > 0 else 0.0
+        
+        # Add class distribution for visualization
+        subgroup_metrics['class_distribution'] = {
+            '0': negative_count,
+            '1': positive_count
+        }
+        
+        # For compatibility with existing frontend, also provide these metrics
+        # These represent the class balance, not model performance
+        if positive_count > 0 and negative_count > 0:
+            # Balanced subgroup
+            subgroup_metrics['accuracy'] = float(max(positive_rate, 1 - positive_rate))  # Majority class baseline
+            subgroup_metrics['precision'] = positive_rate  # Proportion of positive class
+            subgroup_metrics['recall'] = positive_rate  # Same as precision for true labels
+            subgroup_metrics['f1'] = positive_rate  # Harmonic mean
+            subgroup_metrics['fpr'] = float(1 - positive_rate) if positive_count > 0 else 0.0
+        elif positive_count == 0:
+            # Only negative class
+            subgroup_metrics['accuracy'] = 1.0  # All negative is "correct" for majority baseline
+            subgroup_metrics['precision'] = 0.0
+            subgroup_metrics['recall'] = 0.0
+            subgroup_metrics['f1'] = 0.0
             subgroup_metrics['fpr'] = 0.0
+            subgroup_metrics['note'] = 'Subgroup contains only negative class (label=0)'
+        else:
+            # Only positive class
+            subgroup_metrics['accuracy'] = 1.0  # All positive is "correct"
+            subgroup_metrics['precision'] = 1.0
+            subgroup_metrics['recall'] = 1.0
+            subgroup_metrics['f1'] = 1.0
+            subgroup_metrics['fpr'] = 0.0
+            subgroup_metrics['note'] = 'Subgroup contains only positive class (label=1)'
         
         return jsonify({
             'status': 'success',
@@ -849,9 +907,37 @@ def init_debias():
             X, Y, O, test_size=0.3, random_state=core_config.SEED
         )
         
-        init_metrics = evaluator.evaluate(
-            X_train, Y_train, O_train, X_test, Y_test, O_test
+        # 调试：检查训练和测试数据的标签分布
+        import sys
+        y_train_dist = Y_train.value_counts().to_dict()
+        y_test_dist = Y_test.value_counts().to_dict()
+        print(f"[DEBUG] Y_train distribution: {y_train_dist}", flush=True, file=sys.stderr)
+        print(f"[DEBUG] Y_test distribution: {y_test_dist}", flush=True, file=sys.stderr)
+        print(f"[DEBUG] X_train shape: {X_train.shape}, X_test shape: {X_test.shape}", flush=True, file=sys.stderr)
+        
+        # Initialize transformer (will handle scaler if needed)
+        transformer = Transform()
+        
+        # Apply transform (even with empty changed_dict, scaler will be applied if needed)
+        # For initial evaluation, changed_dict is empty but scaler should be fitted
+        initial_changed_dict = {}
+        transformed_X_train = transformer.transform_data(
+            X_train, initial_changed_dict, numerical, categorical, fit_scaler=True
         )
+        transformed_X_test = transformer.transform_data(
+            X_test, initial_changed_dict, numerical, categorical, fit_scaler=False
+        )
+        
+        init_metrics = evaluator.evaluate(
+            transformed_X_train, Y_train, O_train, transformed_X_test, Y_test, O_test
+        )
+        
+        # 调试：检查初始metrics中的fairness指标
+        import sys
+        print(f"[DEBUG] Initial metrics keys: {list(init_metrics.keys())}", flush=True, file=sys.stderr)
+        for metric_name in ['EO', 'SP', 'EOpp', 'BNC', 'BPC']:
+            if metric_name in init_metrics:
+                print(f"[DEBUG] {metric_name} = {init_metrics[metric_name]}", flush=True, file=sys.stderr)
         
         # 添加综合公平性分数
         init_metrics['Overall_Fairness'] = calculate_overall_fairness_score(init_metrics)
@@ -902,8 +988,8 @@ def init_debias():
             'O_train': O_train,
             'O_test': O_test,
             'evaluator': evaluator,
-            'transformer': Transform(),
-            'changed_dict': {},
+            'transformer': transformer,  # Use the already initialized transformer with fitted scaler
+            'changed_dict': initial_changed_dict,  # May contain scaler params now
             'transformed_df': X.copy(),
             'history': [],
             'init_metrics': convert_to_serializable(init_metrics),
@@ -1405,6 +1491,295 @@ def get_job_status(job_id):
         })
     except Exception as e:
         print(f"[ERROR] Error in get_job_status for job {job_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def explain_transformation(attr, transform, config):
+    """
+    Helper function to explain a transformation in human-readable format.
+    
+    Parameters:
+        attr: Attribute name
+        transform: Transformation parameters (dict or 'dropped')
+        config: Configuration snapshot with PARAMS_TRANSFORM_STREAM_CONFIG
+    
+    Returns:
+        List of explanation strings
+    """
+    explanation = []
+    
+    if transform == 'dropped':
+        explanation.append(f"    - {attr}: DROPPED (removed from dataset)")
+        return explanation
+    
+    if not isinstance(transform, dict):
+        explanation.append(f"    - {attr}: {transform}")
+        return explanation
+    
+    # Skip scaler internal params
+    if attr == '__scaler__':
+        explanation.append(f"    - StandardScaler: Applied to all numerical features")
+        return explanation
+    
+    # Extract transformation parameters
+    has_beta_o = 'beta_O' in transform
+    has_beta_y = 'beta_Y' in transform
+    
+    if not has_beta_o and not has_beta_y:
+        # Categorical attribute re-binning
+        explanation.append(f"    - {attr}: Re-binning")
+        for key, value in transform.items():
+            if key not in ['mean_', 'scale_', 'var_', 'feature_names', 'n_features_in_']:
+                explanation.append(f"        {key} → {value}")
+        return explanation
+    
+    # Numerical attribute transformation
+    explanation.append(f"    - {attr}:")
+    
+    # Get transformation config
+    transform_method = config.get('PARAMS_TRANSFORM', 'poly')
+    transform_multi = config.get('PARAMS_TRANSFORM_MULTI', 't1')
+    alpha_o = config.get('PARAMS_MAIN_ALPHA_O', 0.8)
+    
+    # Explain transformation type
+    transform_type_map = {
+        'poly': 'Polynomial',
+        'log': 'Logarithmic',
+        'arcsin': 'Arcsine'
+    }
+    explanation.append(f"        Type: {transform_type_map.get(transform_method, transform_method)}")
+    
+    if has_beta_o:
+        beta_o_idx = transform['beta_O']
+        explanation.append(f"        beta_O: index={beta_o_idx} (bias mitigation)")
+        
+    if has_beta_y:
+        beta_y_idx = transform['beta_Y']
+        explanation.append(f"        beta_Y: index={beta_y_idx} (accuracy enhancement)")
+    
+    if has_beta_o and has_beta_y:
+        explanation.append(f"        Combined: {alpha_o:.2f} * f(beta_O) + {1-alpha_o:.2f} * f(beta_Y)")
+    
+    # Explain multi-beta mode
+    multi_mode_map = {
+        't1': 'Single value transform',
+        't2': 'Cumulative product transform',
+        't3': 'Cumulative sum transform'
+    }
+    explanation.append(f"        Mode: {multi_mode_map.get(transform_multi, transform_multi)}")
+    
+    return explanation
+
+@app.route('/api/debias/<job_id>/download_transforms', methods=['GET'])
+def download_transforms(job_id):
+    """Download transformation rules as text file"""
+    try:
+        if job_id not in jobs:
+            return jsonify({'status': 'error', 'message': 'Job not found'}), 404
+        
+        job = jobs[job_id]
+        
+        # Generate transformation rules text
+        text_lines = []
+        text_lines.append("=" * 80)
+        text_lines.append("TRANSFORMATION RULES REPORT")
+        text_lines.append("=" * 80)
+        text_lines.append("")
+        
+        # Experiment info
+        text_lines.append(f"Job ID: {job_id}")
+        text_lines.append(f"Dataset: {job.get('dataset_name', 'N/A')}")
+        text_lines.append(f"Target Column: {job.get('target', 'N/A')}")
+        text_lines.append(f"Protected Attributes: {', '.join(job.get('protected', []))}")
+        config = job.get('config_snapshot', {})
+        text_lines.append(f"Classifier: {config.get('PARAMS_MAIN_CLASSIFIER', 'N/A')}")
+        text_lines.append(f"Use Bias Mitigation: {config.get('USE_BIAS_MITIGATION', 'N/A')}")
+        text_lines.append(f"Use Accuracy Enhancement: {config.get('USE_ACCURACY_ENHANCEMENT', 'N/A')}")
+        text_lines.append(f"Total Iterations: {len(job.get('history', []))}")
+        text_lines.append("")
+        text_lines.append("=" * 80)
+        text_lines.append("")
+        
+        # Initial state
+        text_lines.append("INITIAL STATE (Iteration 0)")
+        text_lines.append("-" * 80)
+        init_metrics = job.get('init_metrics', {})
+        if init_metrics:
+            text_lines.append(f"  Initial Accuracy: {init_metrics.get('ACC', 0):.6f}")
+            text_lines.append(f"  Initial F1 Score: {init_metrics.get('F1', 0):.6f}")
+            text_lines.append(f"  Initial Recall: {init_metrics.get('Recall', 0):.6f}")
+            text_lines.append(f"  Initial Precision: {init_metrics.get('Precision', 0):.6f}")
+        text_lines.append(f"  Transformations: None (baseline)")
+        text_lines.append("")
+        
+        # Iterate through history
+        history = job.get('history', [])
+        prev_changed_dict = {}
+        
+        for idx, iter_data in enumerate(history, start=1):
+            text_lines.append(f"ITERATION {idx}")
+            text_lines.append("-" * 80)
+            
+            # BM selection info
+            if 'selected_attribute' in iter_data:
+                text_lines.append(f"  Bias Mitigation Target:")
+                text_lines.append(f"    - Protected Group: {iter_data.get('selected_label_O', 'N/A')}")
+                text_lines.append(f"    - Selected Attribute: {iter_data['selected_attribute']}")
+                text_lines.append("")
+            
+            # Changed dict (transformations)
+            changed_dict = iter_data.get('changed_dict', {})
+            
+            # Find new transformations in this iteration
+            new_transforms = {}
+            for attr, transform in changed_dict.items():
+                if attr not in prev_changed_dict or prev_changed_dict.get(attr) != transform:
+                    new_transforms[attr] = transform
+            
+            if new_transforms:
+                text_lines.append(f"  New Transformations Applied in This Iteration:")
+                for attr, transform in new_transforms.items():
+                    explanation_lines = explain_transformation(attr, transform, config)
+                    text_lines.extend(explanation_lines)
+                text_lines.append("")
+            else:
+                text_lines.append(f"  New Transformations: None (only re-evaluation)")
+                text_lines.append("")
+            
+            # Show all accumulated transformations
+            text_lines.append(f"  Accumulated Transformations (Total: {len([k for k in changed_dict.keys() if k != '__scaler__'])} attributes):")
+            if changed_dict:
+                for attr, transform in changed_dict.items():
+                    if attr == '__scaler__':
+                        text_lines.append(f"    - StandardScaler: Enabled")
+                    else:
+                        explanation_lines = explain_transformation(attr, transform, config)
+                        text_lines.extend(explanation_lines)
+            else:
+                text_lines.append(f"    None")
+            text_lines.append("")
+            
+            # Metrics
+            metrics = iter_data.get('metrics', {})
+            if metrics:
+                text_lines.append(f"  Performance Metrics After This Iteration:")
+                text_lines.append(f"    - Accuracy: {metrics.get('ACC', 0):.6f}")
+                text_lines.append(f"    - F1 Score: {metrics.get('F1', 0):.6f}")
+                text_lines.append(f"    - Recall: {metrics.get('Recall', 0):.6f}")
+                text_lines.append(f"    - Precision: {metrics.get('Precision', 0):.6f}")
+                text_lines.append("")
+            
+            # Fairness metrics summary
+            fairness_metrics = ['EO', 'SP', 'EOpp']
+            has_fairness = any(m in metrics for m in fairness_metrics)
+            if has_fairness:
+                text_lines.append(f"  Fairness Metrics:")
+                for metric_name in fairness_metrics:
+                    if metric_name in metrics:
+                        metric_val = metrics[metric_name]
+                        if isinstance(metric_val, dict):
+                            for attr, val in metric_val.items():
+                                text_lines.append(f"    - {metric_name}[{attr}]: {val:.6f}")
+                        else:
+                            text_lines.append(f"    - {metric_name}: {metric_val:.6f}")
+                text_lines.append("")
+            
+            # Epsilon
+            if 'current_max_epsilon' in iter_data:
+                text_lines.append(f"  Bias Concentration (Max Epsilon): {iter_data['current_max_epsilon']:.10f}")
+            if 'current_avg_epsilon' in iter_data:
+                text_lines.append(f"  Bias Concentration (Avg Epsilon): {iter_data['current_avg_epsilon']:.10f}")
+            
+            text_lines.append("")
+            prev_changed_dict = changed_dict.copy()
+        
+        # Final state
+        text_lines.append("=" * 80)
+        text_lines.append("FINAL STATE")
+        text_lines.append("-" * 80)
+        text_lines.append(f"  Status: {job.get('state', 'N/A')}")
+        if job.get('terminated'):
+            text_lines.append(f"  Terminated: Yes")
+        if job.get('termination_reason'):
+            text_lines.append(f"  Termination Reason: {job['termination_reason']}")
+        
+        final_metrics = job.get('final_metrics', {})
+        if final_metrics:
+            text_lines.append(f"  Final Accuracy: {final_metrics.get('ACC', 0):.6f}")
+            text_lines.append(f"  Final F1 Score: {final_metrics.get('F1', 0):.6f}")
+            text_lines.append(f"  Final Recall: {final_metrics.get('Recall', 0):.6f}")
+            text_lines.append(f"  Final Precision: {final_metrics.get('Precision', 0):.6f}")
+        
+        text_lines.append("")
+        text_lines.append("=" * 80)
+        text_lines.append("COMPLETE TRANSFORMATION DICTIONARY")
+        text_lines.append("=" * 80)
+        text_lines.append("")
+        text_lines.append("This section shows the raw transformation parameters as stored in changed_dict.")
+        text_lines.append("These parameters are used by the Transform module to apply mathematical transformations.")
+        text_lines.append("")
+        
+        # Get final changed_dict
+        final_changed_dict = job.get('changed_dict', {})
+        if not final_changed_dict:
+            # Try to get from last history item
+            if history:
+                final_changed_dict = history[-1].get('changed_dict', {})
+        
+        if final_changed_dict:
+            import json
+            text_lines.append("Final changed_dict (JSON format):")
+            text_lines.append("-" * 80)
+            # Pretty print the changed_dict
+            try:
+                json_str = json.dumps(final_changed_dict, indent=2, ensure_ascii=False)
+                text_lines.append(json_str)
+            except:
+                # Fallback to simple string representation
+                for attr, transform in final_changed_dict.items():
+                    text_lines.append(f"{attr}: {transform}")
+            
+            text_lines.append("")
+            text_lines.append("-" * 80)
+            text_lines.append("Parameter Explanation:")
+            text_lines.append("  - 'dropped': Attribute was removed from the dataset")
+            text_lines.append("  - 'beta_O': Index for bias mitigation transformation")
+            text_lines.append("  - 'beta_Y': Index for accuracy enhancement transformation")
+            text_lines.append("  - '__scaler__': StandardScaler parameters for numerical features")
+            text_lines.append("")
+            text_lines.append(f"Transformation Method: {config.get('PARAMS_TRANSFORM', 'N/A')}")
+            text_lines.append(f"Multi-Beta Mode: {config.get('PARAMS_TRANSFORM_MULTI', 'N/A')}")
+            text_lines.append(f"Alpha_O (BM weight): {config.get('PARAMS_MAIN_ALPHA_O', 'N/A')}")
+            
+            # Show stream_data config
+            stream_config = config.get('PARAMS_TRANSFORM_STREAM_CONFIG', {})
+            if stream_config:
+                text_lines.append("")
+                text_lines.append("Stream Configuration (for beta transformations):")
+                for key, value in stream_config.items():
+                    text_lines.append(f"  - {key}: {value}")
+        else:
+            text_lines.append("No transformations were applied.")
+        
+        text_lines.append("")
+        text_lines.append("=" * 80)
+        text_lines.append("END OF REPORT")
+        text_lines.append("=" * 80)
+        
+        # Join lines and create response
+        text_content = "\n".join(text_lines)
+        
+        # Create response with text file
+        from flask import make_response
+        response = make_response(text_content)
+        response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename="transforms_{job_id[:8]}.txt"'
+        
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] Error in download_transforms for job {job_id}: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
