@@ -122,7 +122,7 @@ Professional-grade visualizations for comprehensive model understanding:
 1. Clone the repository
 
 ```bash
-git clone https://github.com/PaulDuanYe/BMWithAE.git
+git clone https://github.com/Kuumasan/BMWithAE.git
 cd BMWithAE
 ```
 
@@ -339,8 +339,7 @@ If you plan to deploy BMWithAE on a production server for long-term operation, *
 
 ```bash
 # Linux/Mac
-cd backend
-./start_production.sh
+sudo bash -c 'cd /public/products/BMWithAE/backend && source /root/miniconda3/bin/activate bmwithae && ./start_production.sh'
 
 # Windows
 cd backend

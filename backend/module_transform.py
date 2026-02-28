@@ -3,11 +3,27 @@ module_transform.py
 =================
 This module provides a Transform class for transforming datasets based on a specified changed_dict.
 The class handles both numerical and categorical attributes, applying transformations
-as defined in the changed_dict parameter. Also handles feature scaling when required by the model.
+as defined in the changed_dict parameter.
 """
+
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from core_config import PARAMS_MAIN_ALPHA_O, PARAMS_TRANSFORM_STREAM_CONFIG, PARAMS_TRANSFORM_STREAM, PARAMS_TRANSFORM, PARAMS_TRANSFORM_MULTI, PARAMS_MAIN_CLASSIFIER
+import pandas as pd
+from sklearn.metrics import normalized_mutual_info_score
+from sklearn.preprocessing import KBinsDiscretizer
+
+from core_config import (
+    PARAMS_MAIN_ALPHA_O,
+
+    PARAMS_TRANSFORM,
+    PARAMS_TRANSFORM_MULTI,
+    PARAMS_TRANSFORM_STREAM,
+    PARAMS_TRANSFORM_STREAM_CONFIG,
+    PARAMS_TRANSFORM_LOG_EPSILON,
+    
+    PARAMS_TRANSFORM_N_BINS,
+    PARAMS_TRANSFORM_X_MAX
+
+)
 
 
 class Transform:
@@ -16,40 +32,19 @@ class Transform:
     
     This class transforms data according to the provided changed_dict,
     which defines transformations for numerical and categorical attributes.
-    Also handles feature scaling for models that require it.
     """
-    
-    # Models that require feature scaling (gradient-based or distance-based)
-    MODELS_REQUIRING_SCALING = {'LR', 'SVM', 'KNN', 'MLP', 'LDA', 'QDA'}
     
     def __init__(self):
         """
         Initialize a new Transform instance.
         
         Automatically generates stream data based on configurations from config.py.
-        Initializes scaler if the current model requires it.
         """
         # Generate stream_data based on stream_name from config.py
         self.stream_data = self.gen_stream(PARAMS_TRANSFORM_STREAM, **PARAMS_TRANSFORM_STREAM_CONFIG)
 
         # Validate and set alpha_O parameter from config.py
         self.alpha_O = PARAMS_MAIN_ALPHA_O if 0 < PARAMS_MAIN_ALPHA_O < 1 else 0.8
-        
-        # Initialize scaler if current model requires it
-        self.scaler = None
-        self.scaler_fitted = False
-        if self._model_requires_scaling():
-            self.scaler = StandardScaler()
-    
-    @staticmethod
-    def _model_requires_scaling():
-        """
-        Check if the current classifier requires feature scaling.
-        
-        Returns:
-            bool: True if the model requires scaling, False otherwise
-        """
-        return PARAMS_MAIN_CLASSIFIER in Transform.MODELS_REQUIRING_SCALING
 
 
     def _cal_beta_value(self, df_temp_attr, beta_value):
@@ -68,7 +63,7 @@ class Transform:
             result = (df_temp_attr.abs() ** beta_value) * (df_temp_attr.apply(np.sign))
             return result.astype(float)  # Ensure float type for consistency
         elif PARAMS_TRANSFORM == 'log':
-            result = np.abs(np.log(df_temp_attr.abs() + 1e-5) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
+            result = np.abs(np.log(df_temp_attr.abs() + PARAMS_TRANSFORM_LOG_EPSILON) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
             return result.astype(float)
         elif PARAMS_TRANSFORM == 'arcsin':
             max_value = df_temp_attr.abs().max()
@@ -140,13 +135,12 @@ class Transform:
                 X_Y = self._calculate_beta_transformation(df_temp_attr, beta_Y_index)
         
         if 'beta_O' in change.keys() and 'beta_Y' in change.keys():
-            return self.alpha_O * X_O + (1 - self.alpha_O) * X_Y
+            df_temp_attr =  self.alpha_O * X_O + (1 - self.alpha_O) * X_Y
         elif 'beta_O' in change.keys():
-            return X_O
+            df_temp_attr =  X_O
         elif 'beta_Y' in change.keys():
-            return X_Y
+            df_temp_attr =  X_Y
         
-        # If no valid transformation parameters are provided, return original
         return df_temp_attr
 
 
@@ -171,10 +165,9 @@ class Transform:
         return transformed_attr
 
 
-    def transform_data(self, X, changed_dict, num_attrs, cate_attrs, fit_scaler=False):
+    def transform_data(self, X, changed_dict, num_attrs, cate_attrs):
         """
         Transform the dataset according to the specified changed_dict.
-        Also applies feature scaling if the model requires it.
         
         Parameters:
             X: DataFrame to be transformed
@@ -182,97 +175,32 @@ class Transform:
                           Format: {attribute_name: transformation_parameters}
             num_attrs: List of numerical attribute names
             cate_attrs: List of categorical attribute names
-            fit_scaler: Whether to fit the scaler (True for training, False for inference)
             
         Returns:
             pandas.DataFrame: Transformed dataset
         """
-        import pandas as pd
-        
         # Create a copy of the data to avoid modifying the original
         df_data_temp = X.copy()
 
-        # Step 1: Apply attribute-specific transformations from changed_dict
+        # Process each attribute specified in changed_dict
         for attribute in changed_dict.keys():
-            # Skip scaler params (handled separately)
-            if attribute == '__scaler__':
-                continue
-                
             df_temp_attr = df_data_temp[attribute]
             change = changed_dict[attribute]
 
-            if attribute in num_attrs:
-                # Process numerical attributes using the dedicated method
-                
-                if change == 'dropped':
-                    df_temp_attr = 1
-                else:
+            if change == 'dropped':
+                df_temp_attr = 1
+            else:
+                if attribute in num_attrs:
+                    # Process numerical attributes using the dedicated method
                     df_temp_attr = self._transform_numerical_attribute(df_temp_attr, change)
-            elif attribute in cate_attrs:
-                # Process categorical attributes using the dedicated method
-                if change == 'dropped':
-                    df_temp_attr = 1
-                else:
+                elif attribute in cate_attrs:
+                    # Process categorical attributes using the dedicated method
                     re_bin_dict = changed_dict[attribute]
                     df_temp_attr = self._transform_categorical_attribute(df_temp_attr, re_bin_dict)
 
             # Update the attribute in the temporary DataFrame
             df_data_temp[attribute] = df_temp_attr
-
-        # Step 2: Apply feature scaling if required by the model
-        if self.scaler is not None:
-            if fit_scaler:
-                # Fit and transform (for training data)
-                df_data_temp = pd.DataFrame(
-                    self.scaler.fit_transform(df_data_temp),
-                    columns=df_data_temp.columns,
-                    index=df_data_temp.index
-                )
-                self.scaler_fitted = True
-                
-                # Store scaler parameters in changed_dict for reproducibility
-                if '__scaler__' not in changed_dict:
-                    changed_dict['__scaler__'] = {}
-                changed_dict['__scaler__']['mean_'] = self.scaler.mean_.tolist()
-                changed_dict['__scaler__']['scale_'] = self.scaler.scale_.tolist()
-                changed_dict['__scaler__']['var_'] = self.scaler.var_.tolist()
-                changed_dict['__scaler__']['n_features_in_'] = int(self.scaler.n_features_in_)
-                changed_dict['__scaler__']['feature_names'] = df_data_temp.columns.tolist()
-                
-            elif self.scaler_fitted:
-                # Only transform (for test/new data)
-                df_data_temp = pd.DataFrame(
-                    self.scaler.transform(df_data_temp),
-                    columns=df_data_temp.columns,
-                    index=df_data_temp.index
-                )
-            else:
-                # Scaler exists but not fitted yet - try to load from changed_dict
-                if '__scaler__' in changed_dict:
-                    self._load_scaler_from_dict(changed_dict['__scaler__'])
-                    df_data_temp = pd.DataFrame(
-                        self.scaler.transform(df_data_temp),
-                        columns=df_data_temp.columns,
-                        index=df_data_temp.index
-                    )
-                # else: First time, will be fitted on next call with fit_scaler=True
-
         return df_data_temp
-    
-    def _load_scaler_from_dict(self, scaler_params):
-        """
-        Load scaler parameters from a dictionary.
-        
-        Parameters:
-            scaler_params: Dictionary containing scaler parameters
-        """
-        import numpy as np
-        if self.scaler is not None and scaler_params:
-            self.scaler.mean_ = np.array(scaler_params['mean_'])
-            self.scaler.scale_ = np.array(scaler_params['scale_'])
-            self.scaler.var_ = np.array(scaler_params['var_'])
-            self.scaler.n_features_in_ = scaler_params['n_features_in_']
-            self.scaler_fitted = True
 
 
     def check_transform_validity(self, X, attribute, change, num_attrs, cate_attrs):
@@ -298,13 +226,11 @@ class Transform:
                 df_transformed_attr = self._transform_numerical_attribute(df_temp_attr, change)
                 
                 # Check for infinity values
-                if df_transformed_attr.isin([np.inf, -np.inf]).any():
-                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Contains infinity values")
+                if df_transformed_attr.isin([PARAMS_TRANSFORM_X_MAX, -PARAMS_TRANSFORM_X_MAX]).any():
                     return False
                       
                 # Check for valid data types
                 if not np.issubdtype(df_transformed_attr.dtype, np.number):
-                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Invalid data type {df_transformed_attr.dtype}")
                     return False
             
             elif attribute in cate_attrs:
@@ -312,16 +238,11 @@ class Transform:
                 
                 # Check for single unique value
                 if df_transformed_attr.nunique() == 1:
-                    print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Only single unique value after transformation")
                     return False
                 
         except Exception as e:
-            print(f"[DEBUG] check_transform_validity FAILED for {attribute}: Exception {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
             return False
             
-        print(f"[DEBUG] check_transform_validity PASSED for {attribute} with change {change}")
         return True
 
 
@@ -414,4 +335,59 @@ class Transform:
 
         else:
             raise ValueError(f"Unsupported stream mode: {mode}")
+
+
+def calculate_x_train_y_train_nmi_dict(X_train, Y_train, n_bins=PARAMS_TRANSFORM_N_BINS, strategy='quantile'):
+    """
+    Fully encapsulated function: Calculate the column-wise Normalized Mutual Information (NMI) 
+    between X_train (multi-column features) and Y_train (single-column label), and store the results in a dictionary.
+    """
+    if not isinstance(X_train, pd.DataFrame):
+        raise TypeError("X_train must be of type pandas.DataFrame, please check the input format")
+    if not isinstance(Y_train, pd.Series):
+        raise TypeError("Y_train must be of type pandas.Series, please check the input format")
+    
+    X_processed = X_train.copy()
+    Y_processed = Y_train.copy()
+
+    # only discretize continuous columns
+    continuous_cols = []
+    discrete_cols = []
+    for col in X_processed.columns:
+        if X_processed[col].dtype == 'float64' or (X_processed[col].dtype == 'int64' and X_processed[col].nunique() > 10):
+            continuous_cols.append(col)
+        else:
+            discrete_cols.append(col)
+    
+    # Discretize continuous columns if any exist
+    if continuous_cols:
+        discretizer = KBinsDiscretizer(
+            n_bins=n_bins,
+            encode='ordinal',  # Encode as integers to meet NMI calculation requirements
+            strategy=strategy,
+            random_state=42  # Fix random seed to ensure result reproducibility
+        )
+        discrete_continuous_data = discretizer.fit_transform(X_processed[continuous_cols])
+        discrete_continuous_df = pd.DataFrame(
+            discrete_continuous_data.astype(int),
+            columns=continuous_cols,
+            index=X_processed.index
+        )
+        X_processed[continuous_cols] = discrete_continuous_df
+
+    nmi_result_dict = {}
+    for feature_col in X_processed.columns:
+        current_feature = X_processed[feature_col].values
+        target_label = Y_processed.values
+        
+        # Calculate NMI score, handle extreme cases (return 0 if the feature has identical values)
+        try:
+            nmi_score = normalized_mutual_info_score(current_feature, target_label)
+        except:
+            nmi_score = 0.0
+        
+        # Round to 4 decimal places and store in the dictionary
+        nmi_result_dict[feature_col] = round(nmi_score, 4)
+    
+    return nmi_result_dict
 

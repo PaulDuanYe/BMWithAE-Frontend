@@ -16,7 +16,7 @@ sleep 3
 
 # Start Backend
 echo "Starting Backend..."
-screen -dmS bmwithae-backend bash -c 'cd /public/products/BMWithAE/backend && source /root/miniconda3/bin/activate bmwithae && ./start_production.sh'
+screen -dmS bmwithae-backend bash -c 'cd /public/products/BMWithAE/backend && source /root/miniconda3/bin/activate bmwithae_py312 && ./start_production.sh'
 sleep 3
 
 # Start Frontend

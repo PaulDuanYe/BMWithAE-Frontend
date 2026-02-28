@@ -37,4 +37,3 @@ DEMO_DATASETS = {
         'description': 'COMPAS Recidivism Dataset'
     }
 }
-

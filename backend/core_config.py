@@ -1,34 +1,28 @@
 ### main.py
 VERBOSE = True
 DATASET = {
-    # 'name': ''
+    #'name': ''
     'path': 'credit.xlsx',
     'target': 'default payment next month',
     'protected': ['SEX', 'MARRIAGE'],
 }
+# DATASET = {
+#     # 'name': ''
+#     'path': '../../../data/data_COMPAS.csv',
+#     'label_Y': 'two_year_recid',
+#     'label_O': ['sex'],
+# }
 
 DATASET_INFO = {
     "credit": {
-        "data": 'credit.xlsx',
-        'attrs': [
-            'LIMIT_BAL', 'AGE', 'PAY_0', 'PAY_2', 'PAY_3', 'PAY_4', 'PAY_5', 'PAY_6', 'BILL_AMT1',
-            'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6', 'PAY_AMT1', 'PAY_AMT2',
-            'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6', 'SEX', 'payment'
-        ],
-        'num_attrs': [
-            'LIMIT_BAL', 'AGE', 'BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6', 'PAY_AMT1', 'PAY_AMT2',
-            'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6'
-        ],
-        'cate_attrs': [
-            'LIMIT_BAL', 'AGE', 'BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6', 'PAY_AMT1', 'PAY_AMT2',
-            'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6', 'SEX', 'payment'
-        ]
+        "data": '../../data/data_Credit_Card.csv',
+    },
+
+    "compas": {
+        "data": '../../data/data_COMPAS.csv',
     }
 }
 
-# Parameters for converting numerical protected attributes to categorical variables
-PARAMS_NUM_TO_CAT_METHOD = 'quartile'  # 'median' or 'quartile'
-PARAMS_NUM_TO_CAT_CUTS = 4  # Number of cuts when using custom binning
 
 SEED = 0
 USE_BIAS_MITIGATION = True
@@ -39,21 +33,36 @@ PARAMS_MAIN_STEP = 'd3B'
 # XGBoost(eXtreme Gradient Boosting), RF(Random Forest), LGBM(LightGBM),
 # CatBoost, LDA(Linear Discriminant Analysis), QDA(Quadratic Discriminant Analysis)
 PARAMS_MAIN_CLASSIFIER = 'LR'
-PARAMS_MAIN_MAX_ITERATION = 2
+PARAMS_MAIN_MAX_ITERATION = 5
 PARAMS_MAIN_TRAINING_RATE = 0.5
-PARAMS_MAIN_THRESHOLD_EPSILON = 0.9
+PARAMS_MAIN_THRESHOLD_EPSILON = 0.5
+PARAMS_MAIN_THRESHOLD_PHI = 1
+PARAMS_MAIN_THRESHOLD_PHI_ADAPT = 'None'
 PARAMS_MAIN_THRESHOLD_ACCURACY = 0.01
 PARAMS_MAIN_AE_IMPORTANCE_MEASURE = 'a1'
+PARAMS_MAIN_BM_REBIN_METHOD = 'r1'
 PARAMS_MAIN_AE_REBIN_METHOD = 'r1'
 PARAMS_MAIN_ALPHA_O = 0.8
 
 
+### module_load.py
+# Parameters for converting numerical protected attributes to categorical variables
+PARAMS_NUM_TO_CAT_METHOD_O = 'median'  # 'median' or 'quartile'
+PARAMS_NUM_TO_CAT_CUTS_O = 2  # Number of cuts when using custom binning
+PARAMS_NUM_TO_CAT_METHOD_Y = 'median'  # 'median' or 'quartile'
+PARAMS_NUM_TO_CAT_CUTS_Y = 2  # Number of cuts when using custom binning
+
+# Parameters for distinguishing categorical variables from numerical variables
+PARAMS_CAT_FROM_NUM_BINS = 20
+PARAMS_CAT_FROM_NUM_RATIO = 0.1
+
+
 ### eval.py
 PARAMS_EVAL_H_ORDER = 'default'  # 1- N
-PARAMS_EVAL_SUM = 'd1A'  # d1A, d1B
+PARAMS_EVAL_SUM = 'd1B'  # d1A, d1B
 PARAMS_EVAL_CAT = 'cat-a'  # a, b
 PARAMS_EVAL_NUM = 'num-a'  # a, b, c, d
-PARAMS_EVAL_SCALE = 'zscore' # mean, min, zscore
+PARAMS_EVAL_SCALE = 'mean' # mean, min, zscore
 PARAMS_EVAL_DIST_METRIC = 'euclidean'
 """
 braycurtis, canberra, chebyshev, cityblock, correlation, cosine, dice, euclidean, hamming, jaccard, jensenshannon, kulczynski1, mahalanobis, matching, minkowski, rogerstanimoto, russellrao, seuclidean, sokalmichener, sokalsneath, sqeuclidean, yule
@@ -80,9 +89,14 @@ PARAMS_EVAL_METRIC_FAIRNESS = ['BNC', 'BPC', 'CUAE', 'EOpp', 'EO', 'FDRP', 'FORP
 # Precision: Positive Predictive Value - proportion of predicted positives that are actual positives
 PARAMS_EVAL_METRIC_ACCURACY = ['ACC', 'F1', 'Recall', 'Precision']
 
+PARAMS_EVAL_NORM = 'min-max'
+# PARAMS_EVAL_NORM = 'z-score'
+PARAMS_EVAL_MAX_COMPONENTS = 15
+PARAMS_EVAL_SLOPE_THRESHOLD = 0.01
 
 ### transform.py
 PARAMS_TRANSFORM = 'poly'  # poly, log, arcsin
+PARAMS_TRANSFORM_LOG_EPSILON = 1e-5
 PARAMS_TRANSFORM_MULTI = 't1'  # t1, t2, t3
 PARAMS_TRANSFORM_STREAM = 'd4A'  # d4A, d4B, E1-9
 PARAMS_TRANSFORM_STREAM_CONFIG = {
@@ -93,5 +107,5 @@ PARAMS_TRANSFORM_STREAM_CONFIG = {
     'order': 0,
     'length': 10
 }
-
-
+PARAMS_TRANSFORM_X_MAX = 1e+9
+PARAMS_TRANSFORM_N_BINS = 10

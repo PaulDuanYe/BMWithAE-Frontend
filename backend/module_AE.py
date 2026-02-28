@@ -1,35 +1,43 @@
+import copy
+import numpy as np
 import pandas as pd
 from itertools import combinations
-from core_config import VERBOSE, PARAMS_MAIN_AE_IMPORTANCE_MEASURE, PARAMS_MAIN_AE_REBIN_METHOD, SEED
-from module_transform import Transform
-from eval import Evaluator
-from sklearn.linear_model import LassoCV
-from itertools import combinations
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.inspection import permutation_importance
-import numpy as np
+
 from sklearn.model_selection import train_test_split
-import copy
+from sklearn.inspection import permutation_importance
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.feature_selection import mutual_info_classif
+
+from eval import Evaluator
+from module_transform import Transform
+
+from core_config import (
+    SEED,
+    VERBOSE,
+    
+    PARAMS_MAIN_AE_IMPORTANCE_MEASURE,
+    PARAMS_MAIN_AE_REBIN_METHOD,
+)
 
 
 class AccuracyEnhancement:
     def __init__(self, evaluator: Evaluator, transformer: Transform, label_Y, cate_attrs, num_attrs):
         """
-        Initialize BiasMitigation class
-        
-        Parameters:
-        evaluator: Evaluator
-            Evaluator instance for calculating metrics
-        transformer: Transform
-            Transform instance for data transformation
-        label_O: str or list of str
-            Protected attribute(s) to mitigate bias
-        label_Y: str
-            Target variable
-        cate_attrs: list of str
-            Categorical attributes in the dataset
-        num_attrs: list of str
-            Numerical attributes in the dataset
+            Initialize BiasMitigation class
+            
+            Parameters:
+            evaluator: Evaluator
+                Evaluator instance for calculating metrics
+            transformer: Transform
+                Transform instance for data transformation
+            label_O: str or list of str
+                Protected attribute(s) to mitigate bias
+            label_Y: str
+                Target variable
+            cate_attrs: list of str
+                Categorical attributes in the dataset
+            num_attrs: list of str
+                Numerical attributes in the dataset
         """
         self.label_Y = label_Y
         self.cate_attrs = cate_attrs
@@ -38,6 +46,7 @@ class AccuracyEnhancement:
         self.transformer = transformer
         self.skip_attr_list = []
     
+
     def _find_attribute(self, df_data_temp, Y, changed_dict):
         """
         Find the attribute with maximum epsilon value from df_epsilon
@@ -57,8 +66,15 @@ class AccuracyEnhancement:
             df_importance.columns = ['importance']
             df_importance = df_importance.sort_values(by='importance', ascending=True)
         elif PARAMS_MAIN_AE_IMPORTANCE_MEASURE == 'a2':
-            clf = LassoCV(random_state=SEED).fit(df_data_temp, Y)
-            importance = np.abs(clf.coef_)
+            clf = LogisticRegressionCV(
+                penalty='l1',
+                solver='saga',
+                multi_class='multinomial',
+                random_state=SEED,
+                max_iter=1000,
+                n_jobs=-1
+            ).fit(df_data_temp, Y)
+            importance = np.mean(np.abs(clf.coef_), axis=0)
             df_importance = pd.DataFrame(importance)
             df_importance.index = df_data_temp.columns
             df_importance.columns = ['importance']
@@ -79,7 +95,8 @@ class AccuracyEnhancement:
                 if attr_acc not in self.skip_attr_list:
                     break
         return attr_acc
-            
+        
+
     def step(self, X, transformed_df, Y, selected_attribute, changed_dict):
         """
         Perform a bias mitigation step
@@ -151,8 +168,18 @@ class AccuracyEnhancement:
             if self.transformer.check_transform_validity(X, attr_acc, temp_dict[attr_acc], self.num_attrs, self.cate_attrs):
                 changed_dict[attr_acc] = temp_dict[attr_acc]
             else:
-                print(f"Invalid change for {attr_acc}: {temp_dict[attr_acc]}")
                 self.skip_attr_list.append(attr_acc)
+
+            if attr_acc in temp_dict.keys():
+                temp_dict[attr_acc].update(change)
+            else:
+                temp_dict[attr_acc] = change
+
+            if self.transformer.check_transform_validity(X, attr_acc, temp_dict[attr_acc], self.num_attrs, self.cate_attrs):
+                changed_dict[attr_acc] = temp_dict[attr_acc]
+            else:
+                self.skip_attr_list.append(attr_acc)
+        
         else:
             # Numerical attribute - increment beta_O by 1
             attr_acc = selected_attribute
@@ -166,11 +193,11 @@ class AccuracyEnhancement:
             if self.transformer.check_transform_validity(X, attr_acc, change, self.num_attrs, self.cate_attrs):
                 changed_dict[attr_acc] = change
             else:
-                print(f"Invalid change for {attr_acc}: {change}")
                 self.skip_attr_list.append(attr_acc)
             
         return changed_dict
     
+
     def enhance(self, X, Y, changed_dict=None):
         """
         Continuously perform bias mitigation steps based on PARAMS_STEP
