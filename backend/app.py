@@ -24,6 +24,7 @@ from eval import Evaluator
 from module_BM import BiasMitigation as BM
 from module_AE import AccuracyEnhancement as AE
 from module_transform import Transform
+from module_transform import calculate_x_train_y_train_nmi_dict
 import core_config
 
 app = Flask(__name__)
@@ -904,7 +905,7 @@ def init_debias():
         # Initial evaluation
         from sklearn.model_selection import train_test_split
         X_train, X_test, Y_train, Y_test, O_train, O_test = train_test_split(
-            X, Y, O, test_size=0.3, random_state=core_config.SEED
+            X, Y, O, test_size=core_config.PARAMS_TEST_SIZE, random_state=core_config.SEED
         )
         
         # 调试：检查训练和测试数据的标签分布
@@ -922,11 +923,9 @@ def init_debias():
         # For initial evaluation, changed_dict is empty but scaler should be fitted
         initial_changed_dict = {}
         transformed_X_train = transformer.transform_data(
-            X_train, initial_changed_dict, numerical, categorical, fit_scaler=True
-        )
+            X_train, initial_changed_dict, numerical, categorical)
         transformed_X_test = transformer.transform_data(
-            X_test, initial_changed_dict, numerical, categorical, fit_scaler=False
-        )
+            X_test, initial_changed_dict, numerical, categorical)
         
         init_metrics = evaluator.evaluate(
             transformed_X_train, Y_train, O_train, transformed_X_test, Y_test, O_test
@@ -1214,6 +1213,8 @@ def _run_full_process_thread(job_id):
         job['state'] = 'running'
         job['progress'] = 0
         
+        nmi_org = calculate_x_train_y_train_nmi_dict(job['X_train'], job['Y_train'])
+        
         # Loop until termination condition or max iteration
         while job['current_iteration'] < job['max_iteration'] and not job['terminated']:
             try:
@@ -1232,7 +1233,7 @@ def _run_full_process_thread(job_id):
                     selected_label_O, selected_attribute = job['bm']._find_max_epsilon_attribute(current_epsilon)
                     
                     transformed_df, changed_dict = job['bm'].mitigate(
-                        job['X'], job['O'], job['changed_dict']
+                        job['X'], job['Y'], job['O'], nmi_org, job['changed_dict']
                     )
                     
                     job['transformed_df'] = transformed_df

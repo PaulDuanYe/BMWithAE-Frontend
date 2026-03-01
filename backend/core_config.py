@@ -1,7 +1,7 @@
 ### main.py
 VERBOSE = True
 DATASET = {
-    #'name': ''
+    # 'name': ''
     'path': 'credit.xlsx',
     'target': 'default payment next month',
     'protected': ['SEX', 'MARRIAGE'],
@@ -9,8 +9,8 @@ DATASET = {
 # DATASET = {
 #     # 'name': ''
 #     'path': '../../../data/data_COMPAS.csv',
-#     'label_Y': 'two_year_recid',
-#     'label_O': ['sex'],
+#     'target': 'two_year_recid',
+#     'protected': ['sex'],
 # }
 
 DATASET_INFO = {
@@ -35,6 +35,7 @@ PARAMS_MAIN_STEP = 'd3B'
 PARAMS_MAIN_CLASSIFIER = 'LR'
 PARAMS_MAIN_MAX_ITERATION = 5
 PARAMS_MAIN_TRAINING_RATE = 0.5
+PARAMS_TEST_SIZE = 0.3
 PARAMS_MAIN_THRESHOLD_EPSILON = 0.5
 PARAMS_MAIN_THRESHOLD_PHI = 1
 PARAMS_MAIN_THRESHOLD_PHI_ADAPT = 'None'
