@@ -11,7 +11,7 @@ from sklearn.feature_selection import mutual_info_classif
 from eval import Evaluator
 from module_transform import Transform
 
-from config import (
+from core_config import (
     SEED,
     VERBOSE,
     

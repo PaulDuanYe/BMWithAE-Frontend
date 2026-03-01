@@ -13,7 +13,7 @@ from sklearn.preprocessing import LabelEncoder
 from typing import Dict, List, Tuple, Optional
 
 # Import configuration
-from config import (
+from core_config import (
     VERBOSE,
     DATASET,
     DATASET_INFO,
@@ -84,7 +84,7 @@ class DataLoader:
         if df:
             self.df = df
 
-        else:
+        else:           
             self.data_path = DATASET.get('path', '')
             print(self.data_path)
 
@@ -133,7 +133,7 @@ class DataLoader:
         
         # If not enough type information provided, auto-detect
         if not self.categorical_columns or not self.numerical_columns:
-            if hasattr(self, 'data_name'):
+            if hasattr(self, 'data_name') and self.data_name in DATASET_INFO:
                 self.categorical_columns = DATASET_INFO[self.data_name].get('categorical', [])
                 self.numerical_columns = DATASET_INFO[self.data_name].get('numerical', [])
         
@@ -214,9 +214,9 @@ class DataLoader:
     def _split_data(self) -> None:
         """Split data into Y, O, and X"""
         # Get Y
-        self.label_Y = DATASET.get('label_Y')
+        self.label_Y = DATASET.get('target')
 
-        if not self.label_Y and self.data_name:
+        if not self.label_Y and hasattr(self, 'data_name') and self.data_name in DATASET_INFO:
             self.label_Y = DATASET_INFO[self.data_name].get('label_Y')
 
         if not self.label_Y or self.label_Y not in self.df.columns:
@@ -226,16 +226,16 @@ class DataLoader:
         
 
         # Get O
-        self.label_O = DATASET.get('label_O', [])
+        self.label_O = DATASET.get('protected', [])
 
-        if not self.label_O and self.data_name:
+        if not self.label_O and hasattr(self, 'data_name') and self.data_name in DATASET_INFO:
             self.label_O = DATASET_INFO[self.data_name].get('label_O', [])
         
         if not self.label_O:
             self.label_O_top_K = DATASET.get('label_O_top_K')
 
             if not self.label_O_top_K:
-                if self.data_name:
+                if hasattr(self, 'data_name') and self.data_name in DATASET_INFO:
                     self.label_O_top_K = DATASET_INFO[self.data_name].get('label_O_top_K', 1)
                 else:
                     self.label_O_top_K = 1
@@ -281,14 +281,14 @@ class DataLoader:
 
         # Get X
         self.label_X = DATASET.get('label_X')
-        if not self.label_X and hasattr(self, 'data_name'):
+        if not self.label_X and hasattr(self, 'data_name') and self.data_name in DATASET_INFO:
             self.label_X = DATASET_INFO[self.data_name].get('label_X', [])
         
         if not self.label_X:
             self.X = self.df.drop(columns=[self.label_Y] + self.label_O).copy()
             self.label_X = self.X.columns.to_list()
         else:
-            self.label_X = [col for col in self.label_X if col not in self.label_O]
+            self.label_X = [col for col in self.label_X if col not in self.label_O and col != self.label_Y]
             self.X = self.X[self.label_X]
 
 

@@ -11,7 +11,7 @@ import pandas as pd
 from sklearn.metrics import normalized_mutual_info_score
 from sklearn.preprocessing import KBinsDiscretizer
 
-from config import (
+from core_config import (
     PARAMS_MAIN_ALPHA_O,
 
     PARAMS_TRANSFORM,
@@ -59,14 +59,18 @@ class Transform:
             Transformed attribute data
         """
         if PARAMS_TRANSFORM == 'poly':
-            return (df_temp_attr.astype(object).abs() ** beta_value) * (df_temp_attr.apply(np.sign))
+            # Apply polynomial transformation: |x|^beta * sign(x)
+            result = (df_temp_attr.abs() ** beta_value) * (df_temp_attr.apply(np.sign))
+            return result.astype(float)  # Ensure float type for consistency
         elif PARAMS_TRANSFORM == 'log':
-            return np.abs(np.log(df_temp_attr.abs() + PARAMS_TRANSFORM_LOG_EPSILON) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
+            result = np.abs(np.log(df_temp_attr.abs() + PARAMS_TRANSFORM_LOG_EPSILON) / np.log(beta_value)) * (df_temp_attr.apply(np.sign))
+            return result.astype(float)
         elif PARAMS_TRANSFORM == 'arcsin':
             max_value = df_temp_attr.abs().max()
             min_value = df_temp_attr.abs().min()
-            df_temp_attr = 2 * (df_temp_attr - min_value) / (max_value - min_value) - 1
-            return (np.arcsin(df_temp_attr.astype(object).abs() / max_value) ** beta_value) * (df_temp_attr.apply(np.sign))
+            df_temp_attr_norm = 2 * (df_temp_attr - min_value) / (max_value - min_value) - 1
+            result = (np.arcsin(df_temp_attr_norm.abs() / max_value) ** beta_value) * (df_temp_attr_norm.apply(np.sign))
+            return result.astype(float)
         else:
             raise ValueError(f"Invalid transform method: {PARAMS_TRANSFORM}")
 

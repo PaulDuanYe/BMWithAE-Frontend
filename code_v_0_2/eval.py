@@ -15,7 +15,7 @@ Key features:
 - Calculation of bias concentration metric (epsilon)
 
 Usage:
-    evaluator = Evaluator(label_O='SEX', label_Y='default payment next month',
+    evaluator = Evaluator(label_O='SEX', label_Y='default payment next month', 
                           cate_attrs=[], num_attrs=[])
     metrics = evaluator.evaluate(X_train, Y_train, O_train, X_test, Y_test, O_test)
     epsilon = evaluator.calculate_epsilon(X, Y, O, num_attrs, cate_attrs)
@@ -52,7 +52,7 @@ from classifiers import (
 )
 
 # Import configuration parameters
-from config import (
+from core_config import (
     SEED,
     VERBOSE,
 
@@ -123,7 +123,8 @@ class Evaluator:
             print(f"Using classifier: {PARAMS_MAIN_CLASSIFIER}")
 
         if PARAMS_MAIN_CLASSIFIER == 'LR':
-            return LogisticRegression(random_state=SEED)
+            # StandardScaler is now handled by Transform class, not here
+            return LogisticRegression(random_state=SEED, max_iter=1000)
         elif PARAMS_MAIN_CLASSIFIER == 'DT':
             return DecisionTreeClassifier(random_state=SEED)
         elif PARAMS_MAIN_CLASSIFIER == 'KNN':

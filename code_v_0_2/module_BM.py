@@ -5,7 +5,7 @@ import copy
 from eval import Evaluator
 from module_transform import Transform, calculate_x_train_y_train_nmi_dict
 
-from config import (
+from core_config import (
     VERBOSE,
 
     PARAMS_MAIN_THRESHOLD_PHI,
