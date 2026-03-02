@@ -996,7 +996,8 @@ def init_debias():
             'terminated': False,
             'termination_reason': None,
             'config_snapshot': config_snapshot.copy(),  # Save config for logging
-            'start_time': time.time()  # Record start time
+            'start_time': time.time(),  # Record start time
+            'nmi_org': calculate_x_train_y_train_nmi_dict(X_train, Y_train) # original NMI for reference
         }
         
         # Initialize BM and AE
@@ -1091,7 +1092,7 @@ def step_iteration(job_id):
             iter_data['selected_attribute'] = selected_attribute
             
             job['transformed_df'], job['changed_dict'] = job['bm'].mitigate(
-                job['X'], job['O'], job['changed_dict']
+                job['X'], job['Y'], job['O'], job['nmi_org'], job['changed_dict']
             )
             
             iter_data['epsilon'] = convert_to_serializable(current_epsilon)
@@ -1213,7 +1214,7 @@ def _run_full_process_thread(job_id):
         job['state'] = 'running'
         job['progress'] = 0
         
-        nmi_org = calculate_x_train_y_train_nmi_dict(job['X_train'], job['Y_train'])
+        #nmi_org = calculate_x_train_y_train_nmi_dict(job['X_train'], job['Y_train'])
         
         # Loop until termination condition or max iteration
         while job['current_iteration'] < job['max_iteration'] and not job['terminated']:
@@ -1233,7 +1234,7 @@ def _run_full_process_thread(job_id):
                     selected_label_O, selected_attribute = job['bm']._find_max_epsilon_attribute(current_epsilon)
                     
                     transformed_df, changed_dict = job['bm'].mitigate(
-                        job['X'], job['Y'], job['O'], nmi_org, job['changed_dict']
+                        job['X'], job['Y'], job['O'], job['nmi_org'], job['changed_dict']
                     )
                     
                     job['transformed_df'] = transformed_df
