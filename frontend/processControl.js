@@ -14,7 +14,7 @@ async function runAllSteps() {
     state.isRunning = true;
     state.currentStep = 0;
     state.history = [];
-    state.startTime = Date.now();  // 记录开始时间
+    /* state.startTime = Date.now(); */  // 记录开始时间
     startTimeUpdate();
     updateProcessStatus('Running');
     $('#runBtnText').textContent = 'Running...';
@@ -75,7 +75,7 @@ async function runNextStep() {
         return;
         }
         
-        state.startTime = Date.now();  // 记录开始时间
+       /*  state.startTime = Date.now(); */  // 记录开始时间
         state.isRunning = true;
         startTimeUpdate(); // 启动时间更新
         updateProcessStatus('Running');
@@ -165,76 +165,76 @@ async function runNextStep() {
         
         // 检查是否完成
         if (data.state === 'completed') {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        stopTimeUpdate(); // 停止时间更新
-        
-        // 更新最后一次的 history 数据
-        if (data.history && data.history.length > 0) {
-            if (state.history.length > 0 && state.history[0]) {
-            state.history = [state.history[0], ...data.history];
-            } else {
-            state.history = data.history;
+            clearInterval(pollInterval);
+            pollInterval = null;
+            stopTimeUpdate(); // 停止时间更新
+            
+            // 更新最后一次的 history 数据
+            if (data.history && data.history.length > 0) {
+                if (state.history.length > 0 && state.history[0]) {
+                state.history = [state.history[0], ...data.history];
+                } else {
+                state.history = data.history;
+                }
+                console.log('[DEBUG] Final history update on completion, total:', state.history.length);
             }
-            console.log('[DEBUG] Final history update on completion, total:', state.history.length);
-        }
-        
-        // 显示最终结果
-        if (state.history.length > 0) {
-            showProcessStep(state.history.length - 1, true);
-        }
-        
-        updateProcessStatus('Completed');
-        
-        // If log_path is available, show it
-        if (data.log_path) {
-            state.logPath = data.log_path;
-            showLogDownloadButton();
-        }
-        
-        console.log('[INFO] Process completed!', {
-            terminated: data.terminated,
-            reason: data.termination_reason,
-            iterations: data.current_iteration,
-            logPath: data.log_path
-        });
-        
-        // 改变按钮为下载按钮
-        $('#runBtnText').textContent = 'Download Transforms';
-        $('#btnRun').disabled = false;
-        $('#btnRun').classList.add('btn--download');
-        state.isRunning = false;
-        state.canDownload = true;
+            
+            // 显示最终结果
+            if (state.history.length > 0) {
+                showProcessStep(state.history.length - 1, true);
+            }
+            
+            updateProcessStatus('Completed');
+            
+            // If log_path is available, show it
+            if (data.log_path) {
+                state.logPath = data.log_path;
+                showLogDownloadButton();
+            }
+            
+            console.log('[INFO] Process completed!', {
+                terminated: data.terminated,
+                reason: data.termination_reason,
+                iterations: data.current_iteration,
+                logPath: data.log_path
+            });
+            
+            // 改变按钮为下载按钮
+            $('#runBtnText').textContent = 'Download Transforms';
+            $('#btnRun').disabled = false;
+            $('#btnRun').classList.add('btn--download');
+            state.isRunning = false;
+            state.canDownload = true;
         } else if (data.state === 'failed') {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        stopTimeUpdate(); // 停止时间更新
-        
-        updateProcessStatus('Failed');
-        
-        let failMessage = `Process failed: ${data.error || 'Unknown error'}`;
-        
-        // If log_path is available, show it even for failed jobs
-        if (data.log_path) {
-            state.logPath = data.log_path;
-            failMessage += `\n\nDebug log saved: ${data.log_path}`;
-            showLogDownloadButton();
-        }
-        
-        alert(failMessage);
-        
-        state.isRunning = false;
+            clearInterval(pollInterval);
+            pollInterval = null;
+            stopTimeUpdate(); // 停止时间更新
+            
+            updateProcessStatus('Failed');
+            
+            let failMessage = `Process failed: ${data.error || 'Unknown error'}`;
+            
+            // If log_path is available, show it even for failed jobs
+            if (data.log_path) {
+                state.logPath = data.log_path;
+                failMessage += `\n\nDebug log saved: ${data.log_path}`;
+                showLogDownloadButton();
+            }
+            
+            alert(failMessage);
+            
+            state.isRunning = false;
         }else {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        stopTimeUpdate();
+            clearInterval(pollInterval);
+            pollInterval = null;
+            stopTimeUpdate();
 
-        updateProcessStatus('Ready');
+            updateProcessStatus('Ready');
 
-        $('#runBtnText').textContent = 'Run';
-        $('#btnRun').disabled = false;
-        
-        state.isRunning = false;
+            $('#runBtnText').textContent = 'Run';
+            $('#btnRun').disabled = false;
+            
+            state.isRunning = false;
         }
     }   
     } catch (err) {
@@ -259,7 +259,7 @@ function resetProcess() {
     state.currentStep = 0;
     state.history = [];
     state.jobId = null;
-    state.startTime = null;
+    /* state.startTime = null; */
     let lastTime = 0; 
     let resumeTime = 0;
     state.logPath = null;

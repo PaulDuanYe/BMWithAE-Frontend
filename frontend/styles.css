@@ -1560,6 +1560,16 @@
     transform: scale(1.05);
   }
   
+  .protected-attr-btn:disabled{
+    opacity:0.7;
+    cursor:not-allowed;
+  }
+
+  .protected-attr-btn:disabled:hover{
+    opacity:0.7;
+    cursor:not-allowed;
+  }
+  
   /* Protected Attributes Modal Styles */
   .attr-modal-overlay {
     position: fixed;

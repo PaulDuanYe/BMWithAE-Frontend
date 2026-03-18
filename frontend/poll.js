@@ -1,35 +1,3 @@
-let timeUpdateInterval = null;
-let lastTime = 0; 
-let resumeTime = 0;
-
-// 启动实时时间更新
-function startTimeUpdate() {
-    if (timeUpdateInterval) {
-    clearInterval(timeUpdateInterval);
-    }
-
-    resumeTime = Date.now();
-    
-    timeUpdateInterval = setInterval(() => {
-    if (state.startTime && state.isRunning) {
-        const totalTime = ((Date.now() - resumeTime) / 1000 + lastTime).toFixed(2);
-        const timeEl = document.querySelector('.metric-card:nth-child(3) .metric-value');
-        if (timeEl) {
-        timeEl.textContent = `${totalTime}s`;
-        }
-    }
-    }, 10); // 每10ms更新一次
-}
-
-// 停止实时时间更新
-function stopTimeUpdate() {
-    if (timeUpdateInterval) {
-    clearInterval(timeUpdateInterval);
-    timeUpdateInterval = null;
-    lastTime = (Date.now() - resumeTime) / 1000;
-    }
-}
-
 // 轮询job进度
 let pollInterval = null;
 
@@ -39,10 +7,25 @@ const data = await res.json();
 
 renderProgress(data);
 
-if (data.status !== "completed") {
-setTimeout(() => pollTask(taskId), 2000);
+if (data.status !== "completed")) {
+setTimeout(() => pollTask(taskId, 2000);
 }
 } */
+
+async function pollJobProgress() {
+    if (pollInterval) clearInterval(pollInterval);
+
+    pollInterval = setInterval(async () => {
+        const res = await fetch(`/job/${state.jobId}`);
+        const data = await res.json();
+
+        renderProgress(data);
+
+        if (data.status === "completed") {
+            clearInterval(pollInterval);
+        }
+    }, 5000);
+}
 
 async function pollJobProgress() {
     if (!state.jobId) return;
@@ -53,7 +36,7 @@ async function pollJobProgress() {
     }
     
     // 启动实时时间更新
-    /* startTimeUpdate(); */
+    startTimeUpdate();
     
     pollInterval = setInterval(async () => {
     try {

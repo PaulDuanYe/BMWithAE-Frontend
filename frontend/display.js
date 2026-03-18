@@ -10,6 +10,38 @@
 ];
  */
 
+let timeUpdateInterval = null;
+let lastTime = 0; 
+let resumeTime = null;
+
+// 启动实时时间更新
+function startTimeUpdate() {
+    if (timeUpdateInterval) {
+    clearInterval(timeUpdateInterval);
+    }
+
+    resumeTime = Date.now();
+    
+    timeUpdateInterval = setInterval(() => {
+    if (state.startTime && state.isRunning) {
+        const totalTime = (Date.now() - resumeTime) / 1000 + lastTime;
+        const timeEl = document.querySelector('.metric-card:nth-child(3) .metric-value');
+        if (timeEl) {
+        timeEl.textContent = `${totalTime.toFixed(2)}s`;
+        }
+    }
+    }, 10); // 每10ms更新一次
+}
+
+// 停止实时时间更新
+function stopTimeUpdate() {
+    if (timeUpdateInterval) {
+    clearInterval(timeUpdateInterval);
+    timeUpdateInterval = null;
+    lastTime = (Date.now() - resumeTime) / 1000 + lastTime;
+    }
+}
+
 function showProcessStep(stepIndex, realData = null) {
     const processContent = $('#processContent');
     
@@ -204,10 +236,14 @@ function showProcessStep(stepIndex, realData = null) {
     const leftYMin = Math.max(0, leftMinValue - leftRange * 0.15);
     const leftYRange = leftYMax - leftYMin || 0.0001;
     const scaleLeftY = (value) => 250 - ((value - leftYMin) / leftYRange) * 220;
-    
+
     // 计算总时间
-    const totalTime = state.startTime ? ((Date.now() - state.startTime) / 1000).toFixed(2) : '0.00';
-    
+
+    let totalTime = 0;
+    if (resumeTime){
+        totalTime = (Date.now() - resumeTime) / 1000 + lastTime;
+    }
+
     processContent.innerHTML = `
     <div class="process-step-display">
         <div class="step-visualization" style="padding: 8px 24px; background: transparent;">
@@ -318,7 +354,7 @@ function showProcessStep(stepIndex, realData = null) {
         </div>
         <div class="metric-card">
             <span class="metric-label">Total Time</span>
-            <span class="metric-value">${totalTime}s</span>
+            <span class="metric-value">${totalTime.toFixed(2)}s</span>
         </div>
         </div>
     </div>

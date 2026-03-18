@@ -815,6 +815,9 @@ def init_debias():
             print(f"[ERROR] Dataset not found: {dataset_id}")
             print(f"[DEBUG] Available datasets: {list(datasets.keys())}")
             return jsonify({'status': 'error', 'message': 'Dataset not found'}), 404
+        else:
+            print(f"[DEBUG] Dataset found: {dataset_id}")
+            print(f"[DEBUG] Available datasets: {list(datasets.keys())}")
         
         # Apply custom config if provided (for this job only)
         
@@ -1046,6 +1049,14 @@ def init_debias():
                     for key, value in config_snapshot.items():
                         if hasattr(module, key):
                             setattr(module, key, value)
+
+@app.route("/debug/datasets")
+def debug_datasets():
+    return datasets
+
+"""     fetch("http://localhost:5001/debug/datasets")
+  .then(r => r.json())
+  .then(console.log) """
 
 @app.route('/api/debias/<job_id>/step', methods=['POST'])
 def step_iteration(job_id):

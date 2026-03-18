@@ -8,7 +8,7 @@ const state = {
     jobId: null,
     history: [],
     selectedMetric: 'Max_Epsilon',  // 默认选择 Max Epsilon
-    startTime: null,  // 开始时间，用于计算总时长
+    /* startTime: null, */  // 开始时间，用于计算总时长
     logPath: null,  // 实验日志路径
     maxEpsilonSeries: [],  // 存储最大 epsilon 曲线数据（绝对值）
     epsilonThreshold: 0,  // epsilon 阈值（绝对值）
