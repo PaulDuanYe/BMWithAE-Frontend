@@ -10,16 +10,14 @@ async function runAllSteps() {
     alert('Please select at least one protected attribute in the Data Explorer first.');
     return;
     }
+
+    const targetAttrs = getSelectedTargetAttributes();
+    if (!targetAttrs){
+        alert('Please select one target attribute in the Data Explorer first.');
+        return;
+    }
     
-    state.isRunning = true;
-    state.currentStep = 0;
-    state.history = [];
-    /* state.startTime = Date.now(); */  // 记录开始时间
-    startTimeUpdate();
-    updateProcessStatus('Running');
-    $('#runBtnText').textContent = 'Running...';
-    $('#btnRun').disabled = true;
-    $('#btnOpenAttrModal').disabled = true;
+    startProcess();
 
     try {
     // Update backend config
@@ -27,34 +25,48 @@ async function runAllSteps() {
     
     // Initialize debiasing job with selected protected attributes
     console.log('[INFO] Starting debiasing with protected attributes:', protectedAttrs);
-    const initResult = await api.initDebias(state.datasetId, protectedAttrs);
-    if (initResult.status !== 'success') {
-        throw new Error(initResult.message);
+    if (!state.runDemo) {
+        const initResult = await api.initDebias(state.datasetId, protectedAttrs,targetAttrs);
+        if (initResult.status !== 'success') {
+            throw new Error(initResult.message);
+        }
+        
+        state.jobId = initResult.data.job_id;
+        
+        // Add initial metrics to history
+        state.history.push({
+            iteration: 0,
+            metrics: initResult.data.init_metrics
+        });
+        
+        // Start full process in background
+        const startResult = await api.runFullProcess(state.jobId);
+        
+        if (startResult.status !== 'success') {
+            throw new Error(startResult.message);
+        }
+        
+        // 开始轮询进度（不在这里重置按钮，等轮询完成后再重置）
+        pollJobProgress();
+    }else {
+        const initResult = await api.startDemoJob();
+        if (initResult.status !== 'success') {
+            throw new Error(initResult.message);
+        }
+        
+        state.jobId = initResult.job_id;
+        
+        pollDemoJobProgress();
     }
-    
-    state.jobId = initResult.data.job_id;
-    
-    // Add initial metrics to history
-    state.history.push({
-        iteration: 0,
-        metrics: initResult.data.init_metrics
-    });
-    
-    // Start full process in background
-    const startResult = await api.runFullProcess(state.jobId);
-    
-    if (startResult.status !== 'success') {
-        throw new Error(startResult.message);
-    }
-    
-    // 开始轮询进度（不在这里重置按钮，等轮询完成后再重置）
-    pollJobProgress();
+
+
     } catch (err) {
     alert(`Error: ${err.message}`);
     updateProcessStatus('Error');
     $('#runBtnText').textContent = 'Run';
     $('#btnRun').disabled = false;
     $('#btnOpenAttrModal').disabled = false;
+    $('#btnOpenTargetModal').disabled = false;
     state.isRunning = false;
     }
 }
@@ -74,20 +86,22 @@ async function runNextStep() {
         alert('Please select at least one protected attribute in the Data Explorer first.');
         return;
         }
+                
+        const targetAttrs = getSelectedTargetAttributes();
+        if (!targetAttrs) {
+            alert('Please select one target attribute in the Data Explorer first.');
+            return;
+        }
+
         
        /*  state.startTime = Date.now(); */  // 记录开始时间
-        state.isRunning = true;
-        startTimeUpdate(); // 启动时间更新
-        updateProcessStatus('Running');
-        $('#runBtnText').textContent = 'Running...';
-        $('#btnRun').disabled = true;
-        $('#btnOpenAttrModal').disabled = true;
+        await startProcess(); 
         await updateBackendConfig();
         
         console.log('[INFO] Starting debiasing with protected attributes:', protectedAttrs);
-        const initResult = await api.initDebias(state.datasetId, protectedAttrs);
+        const initResult = await api.initDebias(state.datasetId, protectedAttrs, targetAttrs);
         if (initResult.status !== 'success') {
-        throw new Error(initResult.message);
+            throw new Error(initResult.message);
         }
         
         state.jobId = initResult.data.job_id;
@@ -97,12 +111,7 @@ async function runNextStep() {
         });
         
     }else {
-        state.isRunning = true;
-        startTimeUpdate(); // 启动时间更新
-        updateProcessStatus('Running');
-        $('#runBtnText').textContent = 'Running...';
-        $('#btnRun').disabled = true;
-        $('#btnOpenAttrModal').disabled = true;        
+        startProcess();
     }
     
 
@@ -120,10 +129,10 @@ async function runNextStep() {
         
         // 保存 max_epsilon_series 和 epsilon_threshold 到 state
         if (data.max_epsilon_series && Array.isArray(data.max_epsilon_series) && data.max_epsilon_series.length > 0) {
-        state.maxEpsilonSeries = data.max_epsilon_series;
-        console.log('[DEBUG] ✅ Saved max_epsilon_series to state:', state.maxEpsilonSeries);
+            state.maxEpsilonSeries = data.max_epsilon_series;
+            console.log('[DEBUG] ✅ Saved max_epsilon_series to state:', state.maxEpsilonSeries);
         } else {
-        console.log('[DEBUG] ❌ max_epsilon_series is empty or invalid, not saving to state');
+            console.log('[DEBUG] ❌ max_epsilon_series is empty or invalid, not saving to state');
         }
         if (data.epsilon_threshold !== undefined) {
         state.epsilonThreshold = data.epsilon_threshold;
@@ -253,15 +262,13 @@ function resetProcess() {
     }
     
     // 停止时间更新
-    stopTimeUpdate();
+    resetTime();
     
     state.isRunning = false;
     state.currentStep = 0;
     state.history = [];
     state.jobId = null;
     /* state.startTime = null; */
-    let lastTime = 0; 
-    let resumeTime = 0;
     state.logPath = null;
     state.maxEpsilonSeries = [];
     state.epsilonThreshold = 0;
@@ -269,6 +276,7 @@ function resetProcess() {
     hideLogDownloadButton();
     updateProcessStatus('Ready');
     $('#btnOpenAttrModal').disabled = false;
+    $('#btnOpenTargetModal').disabled = false;
     $('#runBtnText').textContent = 'Run';
     $('#btnRun').disabled = false;
     $('#btnRun').classList.remove('btn--download');
@@ -288,6 +296,29 @@ function resetProcess() {
     `;
 }
 
+function startProcess() {
+    state.isRunning = true;
+    startTimeUpdate(); // 启动时间更新
+    updateProcessStatus('Running');
+    $('#runBtnText').textContent = 'Running...';
+    $('#btnRun').disabled = true;
+    $('#btnOpenAttrModal').disabled = true;
+    $('#btnOpenTargetModal').disabled = true;
+}
+
+function pauseProcess() {
+    state.isRunning = false;
+    stopTimeUpdate(); // 启动时间更新
+    updateProcessStatus('Ready');
+    $('#runBtnText').textContent = 'Run';
+    $('#btnRun').disabled = false;
+    $('#btnOpenAttrModal').disabled = true;
+    $('#btnOpenTargetModal').disabled = true;
+}
+
+function completeProcess(status) {
+    stopTimeUpdate();
+}
 // Run Mode Selection
 $$('input[name="runMode"]').forEach(radio => {
     radio.addEventListener('change', (e) => {

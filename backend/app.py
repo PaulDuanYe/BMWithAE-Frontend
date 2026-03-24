@@ -26,6 +26,7 @@ from module_AE import AccuracyEnhancement as AE
 from module_transform import Transform
 from module_transform import calculate_x_train_y_train_nmi_dict
 import core_config
+from demo_data import DEMO_JSON
 
 app = Flask(__name__)
 CORS(app)
@@ -241,13 +242,6 @@ def upload_data():
         # Load and analyze data
         df = pd.read_csv(filepath) if filepath.endswith('.csv') else pd.read_excel(filepath)
         
-        # Get parameters from request
-        target_column = request.form.get('target_column')
-        protected_columns = request.form.getlist('protected_columns[]')
-        
-        if not target_column or target_column not in df.columns:
-            return jsonify({'status': 'error', 'message': 'Invalid target column'}), 400
-        
         # Clear cached model for this dataset if it exists
         if dataset_id in dataset_models:
             del dataset_models[dataset_id]
@@ -256,8 +250,6 @@ def upload_data():
         datasets[dataset_id] = {
             'filepath': filepath,
             'filename': filename,
-            'target_column': target_column,
-            'protected_columns': protected_columns,
             'shape': df.shape,
             'columns': df.columns.tolist(),
             'preview': df.head(10).to_dict('records')
@@ -277,6 +269,7 @@ def upload_data():
     
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.route('/api/data/demo', methods=['POST'])
 def load_demo():
@@ -308,8 +301,6 @@ def load_demo():
         datasets[dataset_id] = {
             'filepath': filepath,  # Store relative path from config
             'filename': f"{dataset_name}.xlsx",
-            'target_column': target_column,
-            'protected_columns': protected_columns,
             'shape': df.shape,
             'columns': df.columns.tolist(),
             'preview': df.head(10).to_dict('records')
@@ -506,16 +497,6 @@ def get_dataset_info(dataset_id):
             
             feature_stats[col] = stats
         
-        # Get target column info
-        target_col = dataset.get('target_column')
-        target_distribution = None
-        if target_col and target_col in df.columns:
-            target_distribution = df[target_col].value_counts().to_dict()
-            target_distribution = {str(k): int(v) for k, v in target_distribution.items()}
-        
-        # Get protected columns info
-        protected_cols = dataset.get('protected_columns', [])
-        
         return jsonify({
             'status': 'success',
             'data': {
@@ -526,12 +507,8 @@ def get_dataset_info(dataset_id):
                 'features': features,
                 'feature_types': feature_types,
                 'feature_stats': feature_stats,
-                'target_column': target_col,
-                'target_distribution': target_distribution,
-                'protected_columns': protected_cols
             }
-        })
-    
+        })    
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -546,7 +523,8 @@ def get_bias_metrics(dataset_id):
         
         data = request.json
         protected_attrs = data.get('protected_attributes', [])
-        
+        target_col = data.get('target_attributes')
+
         # Backward compatibility: support single attribute
         if not protected_attrs:
             protected_attr = data.get('protected_attribute')
@@ -558,7 +536,6 @@ def get_bias_metrics(dataset_id):
         
         dataset = datasets[dataset_id]
         filepath = dataset['filepath']
-        target_col = dataset.get('target_column')
         
         if not target_col:
             return jsonify({'status': 'error', 'message': 'Target column not found'}), 400
@@ -600,7 +577,7 @@ def get_subgroup_metrics(dataset_id):
         
         dataset = datasets[dataset_id]
         filepath = dataset['filepath']
-        target_col = dataset.get('target_column')
+        target_col = data.get('target_column')
         
         if not target_col:
             return jsonify({'status': 'error', 'message': 'Target column not found'}), 400
@@ -798,7 +775,8 @@ def init_debias():
         dataset_id = data.get('dataset_id')
         custom_config = data.get('config', {})  # Optional config override
         protected_attributes = data.get('protected_attributes', [])  # User-selected protected attributes (array)
-        
+        target_attributes = data.get('target_attributes', '')
+
         # Backward compatibility: support single attribute
         if not protected_attributes:
             protected_attribute = data.get('protected_attribute')
@@ -850,8 +828,8 @@ def init_debias():
         
         print(f"[DEBUG] Loading data from: {filepath}")
         print(f"[DEBUG] File exists: {os.path.exists(filepath)}")
-        print(f"[DEBUG] Target column: {dataset_info['target_column']}")
-        print(f"[DEBUG] Protected columns: {dataset_info['protected_columns']}")
+        print(f"[DEBUG] Target column: {target_attributes}")
+        print(f"[DEBUG] Protected columns: {protected_attributes}")
         
         # Get project root directory
         project_root = backend_config.PROJECT_ROOT
@@ -868,7 +846,7 @@ def init_debias():
             # Modify DATASET dict in-place (don't replace it)
             core_config.DATASET.clear()
             core_config.DATASET['path'] = filepath
-            core_config.DATASET['target'] = dataset_info['target_column']
+            core_config.DATASET['target'] = target_attributes
             
             # Use user-selected protected attributes if provided, otherwise use default
             if protected_attributes:
@@ -1797,6 +1775,80 @@ def download_transforms(job_id):
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+jobs = {}
+
+# -----------------------------
+# Background simulation function
+# -----------------------------
+def run_demo_job(job_id):
+    job = jobs[job_id]
+
+    # Your existing full JSON
+    demo = DEMO_JSON
+
+    # Step 1: initialize with partial data
+    job["data"] = {
+        "iterations": []
+    }
+
+    job["status"] = "running"
+    job["current_iteration"] = 0
+
+    # Step 2: replay iterations one by one
+    for iteration in demo["iterations"]:
+        time.sleep(10)  # 👈 every 5 seconds
+
+        job["data"]["iterations"].append(iteration)
+        job["current_iteration"] += 1
+
+    # Step 3: add final result
+    time.sleep(5)
+    
+    job["status"] = "completed"
+    job["data"]["final_results"] = demo["final_results"]
+
+
+# -----------------------------
+# 1) Start process
+# -----------------------------
+@app.route('/api/process/start', methods=['POST'])
+def start_process():
+    job_id = str(uuid.uuid4())
+
+    jobs[job_id] = {
+        "status": "created",
+        "data": None
+    }
+
+    # Start background thread
+    thread = threading.Thread(target=run_demo_job, args=(job_id,))
+    thread.start()
+
+    return jsonify({
+        "status": "success",
+        "job_id": job_id
+    })
+
+
+# -----------------------------
+# 2) Get JSON data (polling)
+# -----------------------------
+@app.route('/api/process/<job_id>/data', methods=['GET'])
+def get_data(job_id):
+    if job_id not in jobs:
+        return jsonify({
+            "status": "error",
+            "message": "Job not found"
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        "current_iteration": jobs[job_id]["current_iteration"],
+        "job_status": jobs[job_id]["status"],
+        "data": jobs[job_id]["data"]
+    })
+    
+    
 # ============================================
 # Start Server
 # ============================================

@@ -1,45 +1,8 @@
-// Configuration Parameters
-const config = {
-  numToCatMethod: 'quartile',
-  numToCatCuts: 4,
-  seed: 0,
-  useBiasMitigation: true,
-  useAccuracyEnhancement: false,
-  mainStep: 'd3B',
-  mainClassifier: 'LR',
-  mainMaxIteration: 20,  // 增加到20轮，让epsilon有机会达到阈值
-  mainTrainingRate: 0.5,
-  mainThresholdEpsilon: 0.9,
-  mainThresholdAccuracy: 0.01,
-  mainAeImportanceMeasure: 'a1',
-  mainAeRebinMethod: 'r1',
-  mainAlphaO: 0.8,
-  evalHOrder: 'default',
-  evalSum: 'd1A',
-  evalCat: 'cat-a',
-  evalNum: 'num-a',
-  evalScale: 'zscore',
-  evalDistMetric: 'euclidean',
-  evalMetricFairness: ['BNC', 'BPC', 'CUAE', 'EOpp', 'EO', 'FDRP', 'FORP', 'FNRB', 'FPRB', 'NPVP', 'OAE', 'PPVP', 'SP'],
-  evalMetricAccuracy: ['ACC', 'F1', 'Recall', 'Precision'],
-  transformMethod: 'poly',
-  transformMulti: 't1',
-  transformStream: 'd4A',
-  streamConfig: {
-    p: 102,
-    q: 173,
-    emin: 0.5,
-    emax: 2,
-    order: 0,
-    length: 10
-  }
-};
-
 // Modal Functions
 function openConfigModal() {
       $('#configModal').classList.add('active');
       loadConfigToForm();
-    }
+}
 
 function closeConfigModal() {
   $('#configModal').classList.remove('active');

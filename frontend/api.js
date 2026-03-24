@@ -37,6 +37,22 @@ class BMWithAEAPI {
     return data;
   }
 
+  async uploadDataset(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseURL}/data/upload`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    if (data.status === 'success') {
+      this.currentDatasetId = data.data.dataset_id;
+    }
+    return data;
+  }
+
   /**
    * Load demo dataset
    */
@@ -83,9 +99,10 @@ class BMWithAEAPI {
    * @param {string} datasetId - Dataset ID
    * @param {string|Array} protectedAttributes - Protected attribute(s) to use for debiasing (optional)
    */
-  async initDebias(datasetId = null, protectedAttributes = null) {
+  async initDebias(datasetId = null, protectedAttributes = null, targetAttributes = null) {
     const requestBody = { 
-      dataset_id: datasetId || this.currentDatasetId 
+      dataset_id: datasetId || this.currentDatasetId,
+      target_attributes: targetAttributes
     };
     
     // Add protected attributes if specified (support both string and array)
@@ -158,9 +175,14 @@ class BMWithAEAPI {
   /**
    * Get dataset information (features, statistics, etc.)
    */
+
+  // if you need target distribution, pass in the targetAttrs
   async getDatasetInfo(datasetId = null) {
     const response = await fetch(
-      `${this.baseURL}/data/${datasetId || this.currentDatasetId}/info`
+      `${this.baseURL}/data/${datasetId || this.currentDatasetId}/info`,
+      {
+        method: 'GET',
+      }
     );
     return await response.json();
   }
@@ -170,16 +192,11 @@ class BMWithAEAPI {
    * @param {string} datasetId - Dataset ID
    * @param {string|Array} protectedAttributes - Protected attribute(s)
    */
-  async getBiasMetrics(datasetId, protectedAttributes) {
-    const requestBody = {};
-    
-    // Support both string and array
-    if (Array.isArray(protectedAttributes)) {
-      requestBody.protected_attributes = protectedAttributes;
-    } else {
-      // Single string - send as array
-      requestBody.protected_attributes = [protectedAttributes];
-    }
+  async getBiasMetrics(datasetId, protectedAttributes, targetAttributes) {
+    const requestBody = {
+      protected_attributes: protectedAttributes,
+      target_attributes: targetAttributes
+    };
     
     const response = await fetch(
       `${this.baseURL}/data/${datasetId || this.currentDatasetId}/bias-metrics`,
@@ -199,7 +216,11 @@ class BMWithAEAPI {
    * @param {string} datasetId - Dataset ID
    * @param {Object} conditions - Subgroup conditions (e.g., {'AGE': 25, 'SEX': 'M'})
    */
-  async getSubgroupMetrics(datasetId, conditions) {
+  async getSubgroupMetrics(datasetId, conditions, targetAttrs) {
+    const requestBody = {
+      conditions: conditions,
+      target_attributes: targetAttrs
+    }
     const response = await fetch(
       `${this.baseURL}/data/${datasetId || this.currentDatasetId}/subgroup-metrics`,
       {
@@ -207,11 +228,33 @@ class BMWithAEAPI {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ conditions })
+        body: JSON.stringify({requestBody})
       }
     );
     return await response.json();
   }
+
+  async startDemoJob() {
+    const response = await fetch(
+      `${this.baseURL}/process/start`,
+      {
+        method: 'POST',
+      }
+    );
+    return await response.json();
+  }
+
+  async getDemoJobStatus(jobId) {
+    const response = await fetch(
+      `${this.baseURL}/process/${jobId}/data`,
+      {
+        method: 'GET',
+      }
+    );
+    return await response.json();
+  }
+
+  async
 }
 
 // Export for use in index.html

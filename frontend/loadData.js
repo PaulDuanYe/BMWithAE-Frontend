@@ -111,7 +111,6 @@ async function loadDemoData(demoKey){
     if (result.status === 'success') {
       state.datasetId = result.data.dataset_id;
       state.currentData = result.data.filename;
-      state.datasetInfo = result.data; // Store dataset info
       
       // Trigger transition to data explorer immediately
       setTimeout(() => {

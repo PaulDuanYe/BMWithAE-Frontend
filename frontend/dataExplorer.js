@@ -43,41 +43,38 @@ async function initializeDataExplorer() {
     if (response.status === 'success' && response.data) {
         const datasetInfo = response.data;
         
-        // Store dataset info for later use
-        state.currentDatasetInfo = datasetInfo;
-        
-        // Populate protected attributes list (checkboxes)
+        // Populate attributes list (checkboxes)
         populateProtectedAttributesList(datasetInfo.features || []);
-        
-        // Get the selected protected attributes (priority ones will be auto-selected)
-        const selectedAttrs = getSelectedProtectedAttributes();
+        populateTargetAttributesList(datasetInfo.features || []);
+
+        // Get the selected protected and target attributes (priority ones will be auto-selected)
+        const selectedProtectedAttrs = getSelectedProtectedAttributes();
+        const selectedTargetAttrs = getSelectedTargetAttributes();
         
         // Update the display bar with selected attributes
         updateProtectedAttrDisplay();
-        
-        // Display bias metrics overview for the selected attributes
-        if (selectedAttrs.length > 0) {
-        await displayBiasOverview(selectedAttrs);
-        }
-        
-        // Render feature distributions
-        renderFeatureDistributions(datasetInfo);
+        updateTargetAttrDisplay();
         
         // Setup modal event listeners
         $('#btnOpenAttrModal').addEventListener('click', openAttrModal);
         $('#btnCloseAttrModal').addEventListener('click', closeAttrModal);
         $('#btnCancelAttrModal').addEventListener('click', closeAttrModal);
-        $('#btnConfirmAttrModal').addEventListener('click', confirmAttrSelection);
+        $('#btnConfirmAttrModal').addEventListener('click', confirmProtectedAttrSelection);
         
+        $('#btnOpenTargetModal').addEventListener('click', openTargetModal);
+        $('#btnCloseTargetModal').addEventListener('click', closeTargetModal);
+        $('#btnCancelTargetModal').addEventListener('click', closeTargetModal);
+        $('#btnConfirmTargetModal').addEventListener('click', confirmTargetAttrSelection);
+
         // Close modal on overlay click
         $('#attrModalOverlay').addEventListener('click', (e) => {
-        if (e.target === $('#attrModalOverlay')) {
-            closeAttrModal();
-        }
+            if (e.target === $('#attrModalOverlay')) {
+                closeAttrModal();
+            }
         });
     }
     } catch (err) {
-    console.error('[ERROR] Failed to initialize data explorer:', err);
+        console.error('[ERROR] Failed to initialize data explorer:', err);
     }
 }
 
@@ -93,12 +90,12 @@ function populateProtectedAttributesList(features) {
     const otherFeatures = [];
     
     features.forEach(feature => {
-    const featureLower = feature.toLowerCase();
-    if (protectedAttrs.some(attr => featureLower.includes(attr))) {
-        priorityFeatures.push(feature);
-    } else {
-        otherFeatures.push(feature);
-    }
+        const featureLower = feature.toLowerCase();
+        if (protectedAttrs.some(attr => featureLower.includes(attr))) {
+            priorityFeatures.push(feature);
+        } else {
+            otherFeatures.push(feature);
+        }
     });
     
     // Combine with priority first
@@ -106,50 +103,79 @@ function populateProtectedAttributesList(features) {
     
     // Create checkbox for each attribute
     sortedFeatures.forEach((attr, index) => {
-    const itemDiv = document.createElement('div');
-    itemDiv.className = 'protected-attr-item';
-    itemDiv.dataset.attribute = attr;
-    
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.id = `protected-attr-${index}`;
-    checkbox.value = attr;
-    checkbox.className = 'protected-attr-checkbox';
-    
-    // Auto-select only SEX and MARRIAGE by default (not AGE)
-    const defaultSelected = ['SEX', 'MARRIAGE'];
-    if (defaultSelected.includes(attr.toUpperCase())) {
-        checkbox.checked = true;
-        itemDiv.classList.add('checked');
-    }
-    
-    const label = document.createElement('label');
-    label.htmlFor = `protected-attr-${index}`;
-    label.textContent = attr;
-    
-    // Toggle on click
-    itemDiv.addEventListener('click', (e) => {
-        if (e.target !== checkbox) {
-        checkbox.checked = !checkbox.checked;
-        }
-        if (checkbox.checked) {
-        itemDiv.classList.add('checked');
-        } else {
-        itemDiv.classList.remove('checked');
-        }
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'protected-attr-item';
+        itemDiv.dataset.attribute = attr;
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `protected-attr-${index}`;
+        checkbox.value = attr;
+        checkbox.className = 'protected-attr-checkbox';
+        
+        // Auto-select only SEX and MARRIAGE by default (not AGE)
+/*         const defaultSelected = ['SEX', 'MARRIAGE'];
+        if (defaultSelected.includes(attr.toUpperCase())) {
+            checkbox.checked = true;
+            itemDiv.classList.add('checked');
+        } */
+        
+        const label = document.createElement('label');
+        label.htmlFor = `protected-attr-${index}`;
+        label.textContent = attr;
+        
+        // Toggle on click
+        itemDiv.addEventListener('click', (e) => {
+            if (e.target !== checkbox) {
+            checkbox.checked = !checkbox.checked;
+            }
+            if (checkbox.checked) {
+            itemDiv.classList.add('checked');
+            } else {
+            itemDiv.classList.remove('checked');
+            }
+        });
+        
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+            itemDiv.classList.add('checked');
+            } else {
+            itemDiv.classList.remove('checked');
+            }
+        });
+        
+        itemDiv.appendChild(checkbox);
+        itemDiv.appendChild(label);
+        container.appendChild(itemDiv);
     });
-    
-    checkbox.addEventListener('change', () => {
-        if (checkbox.checked) {
-        itemDiv.classList.add('checked');
-        } else {
-        itemDiv.classList.remove('checked');
-        }
-    });
-    
-    itemDiv.appendChild(checkbox);
-    itemDiv.appendChild(label);
-    container.appendChild(itemDiv);
+}
+
+function populateTargetAttributesList(features) {
+    const container = $('#targetAttributesList');
+    container.innerHTML = '';
+
+    features.forEach((attr, index) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'target-attr-item';
+        itemDiv.dataset.attribute = attr;
+
+        const label = document.createElement('label');
+        label.textContent = attr;
+
+        itemDiv.addEventListener('click', () => {
+            // 1. remove selection from all
+            document.querySelectorAll('.target-attr-item')
+                .forEach(el => el.classList.remove('selected'));
+
+            // 2. select current
+            itemDiv.classList.add('selected');
+
+            // 3. store selected value (optional)
+            state.selectedTargetAttr = attr;
+        });
+
+        itemDiv.appendChild(label);
+        container.appendChild(itemDiv);
     });
 }
 
@@ -234,43 +260,43 @@ function updateBiasScoreCircle(score) {
     description.textContent = getBiasScoreDescription(score);
 }
 
-async function displayBiasOverview(protectedAttrs = null) {
+async function displayBiasOverview(protectedAttrs, targetAttrs) {
     // Get all metric cards and score container
     const metricCards = document.querySelectorAll('.metric-card-small');
     const scoreContainer = $('.bias-score-container');
     
     // Handle both array and single value for backward compatibility
-    if (!protectedAttrs || !state.datasetId) {
-    // Display placeholder values if no protected attributes selected
-    $('#metricSP').textContent = '--';
-    $('#metricEO').textContent = '--';
-    $('#metricEOdds').textContent = '--';
-    $('#metricPP').textContent = '--';
-    $('#biasScoreText').textContent = '--';
-    $('#biasScoreDescription').textContent = 'Select protected attributes to calculate bias';
-    
-    // Reset circle
-    const circle = $('#biasScoreProgress');
-    circle.style.strokeDashoffset = '534.07';
-    circle.style.stroke = '#10b981';
-    
-    return;
+    if (protectedAttrs.length === 0 || !targetAttrs || !state.datasetId) {
+        // Display placeholder values if no protected attributes selected
+        $('#metricSP').textContent = '--';
+        $('#metricEO').textContent = '--';
+        $('#metricEOdds').textContent = '--';
+        $('#metricPP').textContent = '--';
+        $('#biasScoreText').textContent = '--';
+        $('#biasScoreDescription').textContent = 'Select protected attributes to calculate bias';
+        
+        // Reset circle
+        const circle = $('#biasScoreProgress');
+        circle.style.strokeDashoffset = '534.07';
+        circle.style.stroke = '#10b981';
+        
+        return;
     }
     
-    // Ensure protectedAttrs is an array
-    const attrsArray = Array.isArray(protectedAttrs) ? protectedAttrs : [protectedAttrs];
-    
-    if (attrsArray.length === 0) {
-    return;
-    }
-    
+    $('#biasScoreDescription').textContent = 'Loading...';
+
     try {
     // Add loading state
     metricCards.forEach(card => card.classList.add('loading'));
     scoreContainer.classList.add('loading');
     
     // Call backend with array of protected attributes
-    const response = await api.getBiasMetrics(state.datasetId, attrsArray);
+    console.log('[DEBUG] getBiasMetrics params:', {
+        datasetId: state.datasetId,
+        protectedAttrs,
+        targetAttrs
+    });
+    const response = await api.getBiasMetrics(state.datasetId, protectedAttrs, targetAttrs);
     
     if (response.status === 'success' && response.data && response.data.metrics) {
         const metrics = response.data.metrics;
@@ -282,9 +308,9 @@ async function displayBiasOverview(protectedAttrs = null) {
         const biasScore = calculateBiasScore(metrics);
         
         console.log('[INFO] Bias score calculation:', {
-        protectedAttributes: attrsArray,
-        metrics: metrics,
-        biasScore: biasScore
+            protectedAttributes: protectedAttrs,
+            metrics: metrics,
+            biasScore: biasScore
         });
         
         // Update bias score circle
@@ -296,9 +322,9 @@ async function displayBiasOverview(protectedAttrs = null) {
         $('#metricEOdds').textContent = metrics.equalized_odds.toFixed(3);
         $('#metricPP').textContent = metrics.disparate_impact.toFixed(3);
         
-        console.log('[INFO] Updated bias metrics for protected attributes:', attrsArray, {
-        biasScore,
-        metrics
+        console.log('[INFO] Updated bias metrics for protected attributes:', protectedAttrs, {
+            biasScore,
+            metrics
         });
     }
     } catch (err) {
@@ -316,23 +342,31 @@ async function displayBiasOverview(protectedAttrs = null) {
     }
 }
 
-function renderFeatureDistributions(datasetInfo) {
-    const container = $('#featureDistributions');
-    container.innerHTML = '';
+async function renderFeatureDistributions(targetAttrs) {
+    const response = await api.getDatasetInfo(state.datasetId);
     
-    const featureStats = datasetInfo.feature_stats || {};
-    const features = datasetInfo.features || [];
-    
-    features.forEach(featureName => {
-    const stats = featureStats[featureName];
-    if (stats) {
-        const featureItem = createFeatureItem(featureName, stats);
-        container.appendChild(featureItem);
+    if (response.status === 'success' && response.data) {
+        const datasetInfo = response.data;
+        const container = $('#featureDistributions');
+        container.innerHTML = '';
+        
+        const featureStats = datasetInfo.feature_stats || {};
+        const features = datasetInfo.features || [];
+
+        features.forEach(featureName => {
+            const stats = featureStats[featureName];
+            if (stats) {
+                const featureItem = createFeatureItem(featureName, stats, targetAttrs);
+                container.appendChild(featureItem);
+            }
+        })
+    }else{
+        console.log("[ERROR] load getDatasetInfo failed at renderFeatureDistributions")
+        return;
     }
-    });
 }
 
-function createFeatureItem(featureName, stats) {
+function createFeatureItem(featureName, stats, targetAttrs) {
     const item = document.createElement('div');
     item.className = 'feature-item feature-card';
     item.dataset.featureName = featureName;
@@ -352,7 +386,6 @@ function createFeatureItem(featureName, stats) {
     bars = Array.from({length: 10}, () => Math.random() * 100);
     maxVal = Math.max(...bars);
     }
-    
     // Capitalize feature type
     const featureType = stats.type.charAt(0).toUpperCase() + stats.type.slice(1);
     
@@ -398,7 +431,6 @@ function createFeatureItem(featureName, stats) {
         </div>
     </div>
     `;
-    
     // Position tooltip dynamically and load bias metrics on click
     const tooltip = item.querySelector('.feature-tooltip');
     let isTooltipVisible = false;
@@ -424,7 +456,6 @@ function createFeatureItem(featureName, stats) {
     `;
     document.body.appendChild(backdrop);
     }
-    
     // Add visual feedback for clickability
     item.style.cursor = 'pointer';
     item.setAttribute('title', 'Click to view detailed bias metrics');
@@ -443,7 +474,6 @@ function createFeatureItem(featureName, stats) {
         isTooltipVisible = false;
         return;
     }
-    
     // Show tooltip
     isTooltipVisible = true;
     
@@ -478,7 +508,6 @@ function createFeatureItem(featureName, stats) {
     tooltip.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.5) inset';
     tooltip.style.color = '#1a1a1a';
     tooltip.style.fontSize = '14px';
-    
     // Move to body to bypass container restrictions
     if (tooltip.parentElement !== document.body) {
         document.body.appendChild(tooltip);
@@ -501,91 +530,120 @@ function createFeatureItem(featureName, stats) {
     }
     
     const loadingEl = biasSection.querySelector('.tooltip-loading');
-    
     // Only load once
     if (loadingEl && !biasSection.dataset.loaded) {
         try {
-        const response = await api.getBiasMetrics(state.datasetId, [featureName]);
-        if (response.status === 'success' && response.data) {
-            // Backend returns: {data: {metrics: {...}, protected_attributes: [...]}}
-            const metrics = response.data.metrics || response.data;
-            biasSection.dataset.loaded = 'true';
-            
-            console.log('[DEBUG] Bias metrics for', featureName, ':', metrics);
-            
-            // Display bias metrics summary
-            let biasHTML = `
-            <div class="tooltip-metric">
-                <span class="tooltip-metric-label">Statistical Parity:</span>
-                <span class="tooltip-metric-value">${metrics.statistical_parity?.toFixed(4) || 'N/A'}</span>
-            </div>
-            <div class="tooltip-metric">
-                <span class="tooltip-metric-label">Equal Opportunity:</span>
-                <span class="tooltip-metric-value">${metrics.equal_opportunity?.toFixed(4) || 'N/A'}</span>
-            </div>
-            <div class="tooltip-metric">
-                <span class="tooltip-metric-label">Equalized Odds:</span>
-                <span class="tooltip-metric-value">${metrics.equalized_odds?.toFixed(4) || 'N/A'}</span>
-            </div>
-            <div class="tooltip-metric">
-                <span class="tooltip-metric-label">Disparate Impact:</span>
-                <span class="tooltip-metric-value">${metrics.disparate_impact?.toFixed(4) || 'N/A'}</span>
-            </div>
-            `;
-            
-            // Get group_positive_rates from individual_metrics if available
-            let groupRates = metrics.group_positive_rates;
-            if (!groupRates && metrics.individual_metrics && metrics.individual_metrics.length > 0) {
-            groupRates = metrics.individual_metrics[0].group_positive_rates;
-            }
-            
-            console.log('[DEBUG] Group rates:', groupRates);
-            
-            // Display subgroup positive rates if available
-            if (groupRates && Object.keys(groupRates).length > 0) {
-            biasHTML += `
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(0,0,0,0.1);">
-                <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
-                    Subgroup Analysis (Top 10)
-                </div>
-            `;
-            
-            const rates = groupRates;
-            const maxRate = Math.max(...Object.values(rates));
-            
-            // Sort subgroups by positive rate (descending) and take top 10
-            const sortedGroups = Object.entries(rates)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10);  // Only show top 10
-            
-            console.log('[DEBUG] Rendering', sortedGroups.length, 'subgroups');
-            
-            sortedGroups.forEach(([group, rate]) => {
-                const percentage = (rate * 100).toFixed(1);
-                const barWidth = maxRate > 0 ? (rate / maxRate * 100) : 0;
-                
-                biasHTML += `
-                <div style="margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="font-size: 13px; color: #1a1a1a; font-weight: 500;">${group}</span>
-                    <span style="font-size: 12px; color: #64748b;">${percentage}%</span>
+            if (!targetAttrs){
+                const emptyHTML = `
+                <div style="
+                    padding: 20px;
+                    text-align: center;
+                    color: #64748b;
+                ">
+                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+                        No Bias Metrics Available
                     </div>
-                    <div style="width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
-                    <div style="width: ${barWidth}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 4px; transition: width 0.3s ease;"></div>
+                    <div style="font-size: 13px; line-height: 1.5;">
+                        Run the analysis to view fairness metrics and subgroup insights.
+                    </div>
+
+                    <div style="
+                        margin-top: 16px;
+                        padding: 12px;
+                        background: #f8fafc;
+                        border-radius: 6px;
+                        font-size: 12px;
+                        color: #94a3b8;
+                    ">
+                        Metrics will appear here once the backend returns results.
                     </div>
                 </div>
                 `;
-            });
-            
-            biasHTML += `</div>`;
+
+                loadingEl.innerHTML = emptyHTML;
+            }else{
+                const response = await api.getBiasMetrics(state.datasetId, [featureName], targetAttrs);
+                if (response.status === 'success' && response.data) {
+                    // Backend returns: {data: {metrics: {...}, protected_attributes: [...]}}
+                    const metrics = response.data.metrics || response.data;
+                    biasSection.dataset.loaded = 'true';
+                    
+                    console.log('[DEBUG] Bias metrics for', featureName, ':', metrics);
+                    
+                    // Display bias metrics summary
+                    let biasHTML = `
+                    <div class="tooltip-metric">
+                        <span class="tooltip-metric-label">Statistical Parity:</span>
+                        <span class="tooltip-metric-value">${metrics.statistical_parity?.toFixed(4) || 'N/A'}</span>
+                    </div>
+                    <div class="tooltip-metric">
+                        <span class="tooltip-metric-label">Equal Opportunity:</span>
+                        <span class="tooltip-metric-value">${metrics.equal_opportunity?.toFixed(4) || 'N/A'}</span>
+                    </div>
+                    <div class="tooltip-metric">
+                        <span class="tooltip-metric-label">Equalized Odds:</span>
+                        <span class="tooltip-metric-value">${metrics.equalized_odds?.toFixed(4) || 'N/A'}</span>
+                    </div>
+                    <div class="tooltip-metric">
+                        <span class="tooltip-metric-label">Disparate Impact:</span>
+                        <span class="tooltip-metric-value">${metrics.disparate_impact?.toFixed(4) || 'N/A'}</span>
+                    </div>
+                    `;
+                    
+                    // Get group_positive_rates from individual_metrics if available
+                    let groupRates = metrics.group_positive_rates;
+                    if (!groupRates && metrics.individual_metrics && metrics.individual_metrics.length > 0) {
+                    groupRates = metrics.individual_metrics[0].group_positive_rates;
+                    }
+                    
+                    console.log('[DEBUG] Group rates:', groupRates);
+                    
+                    // Display subgroup positive rates if available
+                    if (groupRates && Object.keys(groupRates).length > 0) {
+                    biasHTML += `
+                        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(0,0,0,0.1);">
+                        <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+                            Subgroup Analysis (Top 10)
+                        </div>
+                    `;
+                    
+                    const rates = groupRates;
+                    const maxRate = Math.max(...Object.values(rates));
+                    
+                    // Sort subgroups by positive rate (descending) and take top 10
+                    const sortedGroups = Object.entries(rates)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 10);  // Only show top 10
+                    
+                    console.log('[DEBUG] Rendering', sortedGroups.length, 'subgroups');
+                    
+                    sortedGroups.forEach(([group, rate]) => {
+                        const percentage = (rate * 100).toFixed(1);
+                        const barWidth = maxRate > 0 ? (rate / maxRate * 100) : 0;
+                        
+                        biasHTML += `
+                        <div style="margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-size: 13px; color: #1a1a1a; font-weight: 500;">${group}</span>
+                            <span style="font-size: 12px; color: #64748b;">${percentage}%</span>
+                            </div>
+                            <div style="width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+                            <div style="width: ${barWidth}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 4px; transition: width 0.3s ease;"></div>
+                            </div>
+                        </div>
+                        `;
+                    });
+                    
+                    biasHTML += `</div>`;
+                    }
+                    
+                    console.log('[DEBUG] Setting HTML, length:', biasHTML.length);
+                    loadingEl.innerHTML = biasHTML;
+                    console.log('[DEBUG] HTML set successfully');
+                } else {
+                    loadngEl.textContent = 'Failed toi load bias metrics';
+                }
             }
-            
-            console.log('[DEBUG] Setting HTML, length:', biasHTML.length);
-            loadingEl.innerHTML = biasHTML;
-            console.log('[DEBUG] HTML set successfully');
-        } else {
-            loadingEl.textContent = 'Failed to load bias metrics';
-        }
         } catch (err) {
         console.error('Error loading bias metrics:', err);
         loadingEl.textContent = 'Error loading metrics';

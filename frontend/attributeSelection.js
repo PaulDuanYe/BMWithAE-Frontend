@@ -3,6 +3,11 @@ function getSelectedProtectedAttributes() {
   return Array.from(checkboxes).map(cb => cb.value);
 }
 
+function getSelectedTargetAttributes() {
+  const el = document.querySelector('.target-attr-item.selected');
+  return el ? el.dataset.attribute : null;
+}
+
 function updateProtectedAttrDisplay() {
   const selected = getSelectedProtectedAttributes();
   const textElement = $('#protectedAttrText');
@@ -16,33 +21,62 @@ function updateProtectedAttrDisplay() {
   }
 }
 
+function updateTargetAttrDisplay() {
+  const selected = getSelectedTargetAttributes();
+  const textElement = $('#targetAttrText');
+  
+  if (!selected) {
+    textElement.textContent = 'Select attributes...';
+    textElement.classList.add('placeholder');
+  } else {
+    textElement.textContent = selected;
+    textElement.classList.remove('placeholder');
+  }
+}
+
 function openAttrModal() {
   $('#attrModalOverlay').style.display = 'flex';
+}
+
+function openTargetModal() {
+  $('#targetModalOverlay').style.display = 'flex';
 }
 
 function closeAttrModal() {
   $('#attrModalOverlay').style.display = 'none';
 }
 
-function confirmAttrSelection() {
+function closeTargetModal() {
+  $('#targetModalOverlay').style.display = 'none';
+}
+
+function confirmProtectedAttrSelection() {
   updateProtectedAttrDisplay();
+
   closeAttrModal();
+
   handleProtectedAttributesChange();
+}
+
+function confirmTargetAttrSelection() {
+  updateTargetAttrDisplay();
+
+  closeTargetModal();
+
+  handleTargetAttributesChange();
 }
     
 async function handleProtectedAttributesChange() {
-  const selectedAttrs = getSelectedProtectedAttributes();
-  
-  if (selectedAttrs.length > 0) {
-    console.log('[INFO] Protected attributes changed to:', selectedAttrs);
-    
-    // Update config with selected protected attributes
-    config.protectedAttributes = selectedAttrs;
-    
-    // Recalculate and display bias metrics for the selected attributes
-    await displayBiasOverview(selectedAttrs);
-  } else {
-    // No attributes selected, reset display
-    await displayBiasOverview(null);
-  }
+  const selectedProtectedAttrs = getSelectedProtectedAttributes();
+  const selectedTargetAttrs = getSelectedTargetAttributes();
+
+  await displayBiasOverview(selectedProtectedAttrs, selectedTargetAttrs);
+}
+
+async function handleTargetAttributesChange() {
+  const selectedProtectedAttrs = getSelectedProtectedAttributes();
+  const selectedTargetAttrs = getSelectedTargetAttributes();
+
+  await displayBiasOverview(selectedProtectedAttrs, selectedTargetAttrs);
+  await renderFeatureDistributions(selectedTargetAttrs);
 }

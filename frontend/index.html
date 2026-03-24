@@ -10,8 +10,8 @@
   <script src="utils.js" defer></script>
   <script src="theme.js" defer></script>
   <script src="loadData.js" defer></script>
-  <script src="dataExplorer.js" defer></script>
   <script src="attributeSelection.js" defer></script>
+  <script src="dataExplorer.js" defer></script>
   <script src="subgroup.js" defer></script>
   <script src="configModal.js" defer></script>
   <script src="display.js" defer></script>
@@ -189,6 +189,46 @@
               </div>
             </div>
           </div>
+
+          <!-- Target Attribute Selector -->
+          <div class="explorer-section">
+            <label class="input-label">Target Attributes</label>
+            <div class="target-attr-selector" id="targetAttrSelector">
+              <div class="target-attr-display" id="targetAttrDisplay">
+                <span class="target-attr-text" id="targetAttrText">Select attributes...</span>
+              </div>
+              <button class="target-attr-btn" id="btnOpenTargetModal" title="Select Target Attributes">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Target Attributes Modal -->
+          <div class="target-modal-overlay" id="targetModalOverlay" style="display: none;">
+            <div class="target-modal-content">
+              <div class="modal-header">
+                <h3>Select Target Attributes</h3>
+                <button class="modal-close" id="btnCloseTargetModal">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="modal-body">
+                <p class="input-hint" style="margin-bottom: 16px;">Select one or more sensitive attributes to analyze bias</p>
+                <div class="target-attributes-list" id="targetAttributesList">
+                  <!-- Checkboxes will be populated here -->
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn--secondary" id="btnCancelTargetModal">Cancel</button>
+                <button class="btn btn--primary" id="btnConfirmTargetModal">Confirm</button>
+              </div>
+            </div>
+          </div>
           
           <!-- Bias Overview -->
           <div class="explorer-section">
@@ -314,11 +354,11 @@
                   <path d="M12 20v-6m0 0V4m0 10l4-4m-4 4l-4-4"/>
                   <circle cx="12" cy="12" r="10" opacity="0.2"/>
                 </svg>
-      </div>
+              </div>
               <p class="empty-state__title">Ready to start debiasing</p>
               <p class="empty-state__text">Load your dataset and configure parameters to begin</p>
-    </div>
-    </div>
+            </div>
+          </div>
 
           <div class="process-footer">
             <div class="process-controls">

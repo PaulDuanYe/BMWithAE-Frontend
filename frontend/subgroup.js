@@ -256,7 +256,6 @@ async function addCurrentSubgroup() {
     subgroup.metrics = await fetchSubgroupMetricsAPI(subgroup.conditions);
     } catch (err) {
     console.error('Error fetching metrics:', err);
-    subgroup.metrics = getMockMetrics();
     }
     
     // Add to list
@@ -444,8 +443,14 @@ $('#viewAllSubgroupsModalOverlay').addEventListener('click', closeViewAllSubgrou
 
 // Fetch subgroup metrics from API
 async function fetchSubgroupMetricsAPI(conditions) {
+    const targetAttrs = getSelectedTargetAttribute();
+    if (!targetAttrs){
+        console.error('Failed to fetch subgroup metrics: no targetAttrs seletected');
+        return;
+    }
+
     try {
-    const response = await api.getSubgroupMetrics(state.datasetId, conditions);
+    const response = await api.getSubgroupMetrics(state.datasetId, conditions, targetAttrs);
     if (response.status === 'success') {
         const data = response.data;
         const metrics = data.subgroup_metrics;
@@ -464,11 +469,11 @@ async function fetchSubgroupMetricsAPI(conditions) {
         };
     } else {
         console.error('Failed to fetch subgroup metrics:', response.message);
-        return getMockMetrics();
+        return;
     }
     } catch (error) {
     console.error('Error fetching subgroup metrics:', error);
-    return getMockMetrics();
+    return;
     }
 }
 
