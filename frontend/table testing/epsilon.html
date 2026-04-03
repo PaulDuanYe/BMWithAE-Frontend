@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+body{margin:0;font:14px Arial;background:#f2f2f2;display:flex;justify-content:center;align-items:center;min-height:100vh}
+#w{display:flex;gap:12px;max-width:1200px;width:100%;padding:14px;box-sizing:border-box}
+#b{width:200px;background:#fff;border:1px solid #888;padding:10px;box-sizing:border-box}
+#d{font-size:12px;color:#555;margin:6px 0 8px} #l{display:flex;flex-direction:column;gap:0px}
+.it{width:100%;border:0;background:0;padding:6px 8px;display:flex;align-items:center;gap:10px;border-radius:6px;cursor:pointer;text-align:left}
+.it:hover{background:#f3f3f3}.pin{background:#efe6c8}.icoW{width:44px;flex:0 0 44px;display:flex;justify-content:center}
+.ico{width:34px;height:14px;transition:transform .12s}.big .ico{transform:scale(1.35)}
+#p{flex:1;background:#fff;border:1px solid #888;padding:10px;box-sizing:border-box}
+#p canvas{width:100%;height:260px}
+</style>
+<div id=w>
+  <div id=b><b>Iterations</b><div id=d>click to highlight</div><div id=l role=list></div></div>
+  <div id=p><canvas id=c></canvas></div>
+</div>
+<script>
+fetch("epsilon.json").then(r=>r.json()).then(j=>{
+  const A=j.attributes, K=Object.keys(j).filter(k=>/^iteration_\d+$/.test(k)).sort((a,b)=>+a.split("_")[1]-+b.split("_")[1]);
+  const N=Math.max(25,K.length), C=(i,a=1)=>`hsla(${(i%N)*360/N},70%,45%,${a})`;
+  const D=K.map((k,i)=>({label:(i?`#${k.split("_")[1]}`:"raw"),data:j[k],_i:i,_c:C(i),borderDash:[2,2],tension:0,fill:false,
+    pointStyle:"circle",pointBackgroundColor:"#fff",pointBorderWidth:2,order:10,borderColor:C(i),pointBorderColor:C(i),borderWidth:2,pointRadius:4}));
+  const ch=new Chart(c.getContext("2d"),{type:"line",data:{labels:A,datasets:D},options:{
+    responsive:true,maintainAspectRatio:false,animation:false,
+    layout:{autoPadding:false,padding:{top:14,right:14,bottom:12,left:12}},
+    plugins:{legend:{display:false},tooltip:{enabled:true}},
+    scales:{x:{ticks:{maxRotation:30,minRotation:30}},y:{}}
+  }});
+
+  const l=document.getElementById("l"); let pin=null, hov=null;
+  const focus=()=>hov??pin;
+  const apply=()=>{const f=focus();
+    ch.data.datasets.forEach((ds,i)=>{const c=ds._c;
+      if(f==null){Object.assign(ds,{order:10,borderWidth:2,pointRadius:4,pointBorderWidth:2,borderColor:c,pointBorderColor:c,pointBackgroundColor:"#fff"});}
+      else if(i===f){Object.assign(ds,{order:-100,borderWidth:4,pointRadius:11,pointBorderWidth:3,borderColor:c,pointBorderColor:c,pointBackgroundColor:"#fff"});}
+      else{Object.assign(ds,{order:10,borderWidth:1.25,pointRadius:2.5,pointBorderWidth:1.5,borderColor:C(ds._i,0.14),pointBorderColor:C(ds._i,0.24),pointBackgroundColor:"rgba(255,255,255,.55)"});}
+    });
+    [...l.children].forEach((b,i)=>{b.classList.toggle("pin",i===pin);b.classList.toggle("big",i===hov||i===pin);b.setAttribute("aria-pressed",i===pin?"true":"false");});
+    ch.update("none");
+  };
+
+  const icon=(c)=>`<svg class="ico" viewBox="0 0 34 14"><line x1="1" y1="7" x2="33" y2="7" stroke="${c}" stroke-width="2" stroke-dasharray="3 2"/><circle cx="17" cy="7" r="4" fill="#fff" stroke="${c}" stroke-width="2"/></svg>`;
+  D.forEach((ds,i)=>{const b=document.createElement("button");
+    b.type="button";b.className="it";b.setAttribute("role","listitem");b.setAttribute("aria-pressed","false");
+    b.innerHTML=`<span class="icoW">${icon(ds._c)}</span><span>${ds.label}</span>`;
+    b.addEventListener("mouseenter",()=>{hov=i;apply();}); b.addEventListener("mouseleave",()=>{hov=null;apply();});
+    b.addEventListener("focus",()=>{hov=i;apply();});       b.addEventListener("blur",()=>{hov=null;apply();});
+    b.addEventListener("click",()=>{pin=(pin===i?null:i);apply();}); // touch：無 hover，就靠 click
+    l.appendChild(b);
+  });
+  apply();
+});
+</script>
+</body>
+</html>

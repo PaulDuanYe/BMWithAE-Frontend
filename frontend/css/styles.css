@@ -23,6 +23,7 @@
   }
   *{box-sizing:border-box}
   html,body{height:100%; overflow:hidden}
+  
   body{
     margin:0;
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", sans-serif;
@@ -32,7 +33,29 @@
       radial-gradient(600px 200px at 90% -10%, rgba(37,99,235,.06), transparent 60%),
       #fff;
     line-height:1.55;
-    transition:background .3s, color .3s;
+    transition:
+      background .3s,
+      color .3s,
+      transform .5s ease,
+      opacity .5s ease;
+  }
+
+  body.page-exit {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+
+  .page-overlay {
+    position: fixed;
+    inset: 0;
+    background: white;
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  body.page-exit .page-overlay {
+    opacity: 1;
   }
   
   [data-theme="dark"] body{
@@ -65,7 +88,18 @@
   .brand__mark svg{
     color:#fff;
   }
-  .brand__name{font-size:18px}
+
+  .brand__name {
+    font-size: 18px;
+    font-weight: 1000;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+  }
   
   /* Navigation */
   .nav{
@@ -139,8 +173,10 @@
     height:100%;
   }
   
-  .panel-section{
-    padding:24px;
+  .panel-section {
+    padding: 24px;
+    overflow-y: auto;
+    max-height: 100%;
   }
   
   .section-header{

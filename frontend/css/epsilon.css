@@ -1,0 +1,82 @@
+.epsilon-layout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  box-sizing: border-box;
+}
+
+.epsilon-layout--with-side {
+  gap: 16px;
+}
+
+.epsilon-chart-area {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.epsilon-side-pane {
+  width: 220px;
+  flex: 0 0 220px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.epsilon-side-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.epsilon-side-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.epsilon-button-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.epsilon-iter-btn {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  transition: background .15s ease, transform .12s ease, border-color .15s ease;
+}
+
+.epsilon-iter-btn--focused {
+  transform: scale(1.02);
+  background: #f5f9ff;
+}
+
+.epsilon-iter-btn--pinned {
+  background: #e8f1ff;
+  border-color: #93c5fd;
+}
+
+.epsilon-iter-icon-wrap {
+  width: 42px;
+  flex: 0 0 42px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.epsilon-iter-icon {
+  width: 34px;
+  height: 14px;
+  display: block;
+}

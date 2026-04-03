@@ -57,14 +57,15 @@ function renderProgress(data){
 
     const latestHistory = data.iterations[data.iterations.length - 1];
 
-    // verify latestHistory has necessary fields, Potential problem: the backend update 2 iteration at once and this will not verify the second last iteration 
+    // verify latestHistory has necessary fields, 
+    // Potential problem: the backend update 2 iteration at once and this will not verify the second last iteration, but rarely happens
     if (latestHistory.iteration === undefined) {  
       latestHistory.iteration = data.iterations.length;
       console.warn('Iteration index missing in data, defaulting to length of iterations:', data.iterations.iteration);
     }else if (latestHistory.metrics === undefined) {
       console.warn('Matrix missing in data');
       return;
-    }else if (latestHistory.epsilon === undefined && state.useBiasMitigation) {
+    }else if (latestHistory.epsilon_values === undefined && state.useBiasMitigation) {
       console.warn('Epsilon data missing in data');
       return;
     }
@@ -84,17 +85,43 @@ function renderProgress(data){
     let leftChartData = [];
     let leftChartLabel = '';
     let showThreshold = false;
-    
+
+    let protectedAttrs = getSelectedProtectedAttributes();
+    if (state.runDemo) protectedAttrs = ['SEX', 'RACE',];
+
+    const nonSensitiveMetricNames = ["ACC", "F1", "Recall", "Precision"];
+    const sensitiveMetricNames = [
+      "BNC",
+      "BPC",
+      "CUAE",
+      "EOpp",
+      "EO",
+      "FDRP",
+      "FORP",
+      "FNRB",
+      "FPRB",
+      "NPVP",
+      "OAE",
+      "PPVP",
+      "SP"
+    ];
     if (currentSelectedMetric === 'Max_Epsilon') {
       // Max Epsilon 模式
-      leftChartData = data.iterations.map((item) => ({
+      leftChartData = data.iterations.map((item) => {
+        const allValues = protectedAttrs.flatMap(attr => {
+          const attrData = getCaseInsensitive(item.epsilon_values, attr);
+          return Object.values(attrData?.epsilon_values || {});
+        });
+
+        return {
           iteration: item.iteration,
-          value: Math.max(...Object.values(item.epsilon.sex)),
-      }));
+          value: allValues.length ? Math.max(...allValues) : null
+        };
+      });
 
       leftChartLabel = 'Max Epsilon';
+      showThreshold = true;
 
-      showThreshold = true;  // 只有 Max Epsilon 显示阈值线
       console.log('[DEBUG] Left chart - Max epsilon data:', leftChartData);
     } else{
       // 其他 Fairness Metrics 模式
@@ -178,16 +205,16 @@ function renderProgress(data){
     
     // Y轴标签格式化函数（不使用科学计数法）
     const formatYLabel = (value) => {
-    // 对于非常小的值使用科学计数法
-    if (Math.abs(value) < 0.0001 && value !== 0) {
-        return value.toExponential(2);
-    } else if (Math.abs(value) < 0.01) {
-        return value.toFixed(6);
-    } else if (value >= 0 && value <= 1) {
-        return value.toFixed(3);
-    } else {
-        return value.toFixed(2);
-    }
+      // 对于非常小的值使用科学计数法
+      if (Math.abs(value) < 0.0001 && value !== 0) {
+          return value.toExponential(2);
+      } else if (Math.abs(value) < 0.01) {
+          return value.toFixed(6);
+      } else if (value >= 0 && value <= 1) {
+          return value.toFixed(3);
+      } else {
+          return value.toFixed(2);
+      }
     };
     
     // 计算左侧图表的 Y轴范围

@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dataset Table (Config-driven)</title>
+
+  <!-- Tabulator -->
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator.min.css">
+  <script src="https://unpkg.com/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+
+  <!-- SheetJS (Excel parsing) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    /* Minimal light styling (no UI options besides the table) */
+    :root{
+      --bg:#f5f7fb; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
+      --shadow: 0 10px 30px rgba(0,0,0,.08); --radius:14px;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    body{ margin:0; font-family:var(--sans); background:var(--bg); color:var(--text); }
+    .wrap{ max-width:1200px; margin: 18px auto; padding: 0 16px 18px; }
+    .panel{
+      background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+      box-shadow:var(--shadow); overflow:hidden;
+    }
+    .head{
+      padding:10px 14px; border-bottom:1px solid var(--border);
+      display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+      background:#fafafa;
+    }
+    .meta{ font-size:12px; color:var(--muted); display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .pill{ padding: 6px 10px; border-radius:999px; border:1px solid var(--border); background:#fff; }
+    .status{ font-family:var(--mono); font-size:12px; color:var(--muted); }
+    /* Tabulator light tweaks */
+    .tabulator{ border:none !important; }
+    .tabulator .tabulator-header{ background:#f9fafb !important; border-bottom:1px solid var(--border) !important; }
+    .tabulator .tabulator-col{ border-right:1px solid var(--border) !important; }
+    .tabulator .tabulator-row{ border-bottom:1px solid #f1f5f9 !important; }
+    .tabulator .tabulator-row:nth-child(even){ background:#fafafa !important; }
+    .tabulator .tabulator-row:hover{ background:#f1f5f9 !important; }
+    .tabulator .tabulator-footer{ background:#f9fafb !important; border-top:1px solid var(--border) !important; color:var(--muted) !important; }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="head">
+      <div class="meta">
+        <span class="pill">Source: <b id="sourceLabel">None</b></span>
+        <span class="pill">Rows: <b id="rowCount">0</b></span>
+        <span class="pill">Columns: <b id="colCount">0</b></span>
+      </div>
+      <div class="status" id="status">Ready.</div>
+    </div>
+
+    <div id="table" style="height: 720px;"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CONFIG (EDIT ONLY THIS BLOCK)
+   ========================================================= */
+const CONFIG = {
+  // ✅ MODE SWITCH (NO UI)
+  // "server" = load dataset from URL/path (CSV/JSON/Excel)
+  // "user"   = load dataset from user's machine (CSV/JSON/Excel) OR pasted JSON
+  mode: "server", // <-- change to "user"
+
+  // ---------- Server mode settings ----------
+  server: {
+    datasetUrl: "annual-enterprise-survey-2024-financial-year-provisional.csv",  // e.g. "data/my.csv", "/datasets/users.json", "https://.../table.xlsx"
+    jsonDataPath: null,             // if JSON is {data:[...]} set "data"; otherwise null
+    excelSheetIndex: 0,             // 0 = first sheet
+  },
+
+  // ---------- User mode settings ----------
+  // Because you don't want UI, user-mode needs *one* of these sources:
+  //   A) filePicker: true -> will open file picker automatically on load (still no visible UI)
+  //   B) pastedJson: string -> paste JSON here (array of objects), used immediately
+  user: {
+    filePicker: true,               // if true, auto-open OS file picker
+    // pastedJson: `[
+    //   {"id":1,"name":"Alice"},
+    //   {"id":2,"name":"Bob"}
+    // ]`,
+    pastedJson: null,               // if set, it overrides filePicker
+  },
+};
+/* ========================================================= */
+
+const els = {
+  status: document.getElementById("status"),
+  sourceLabel: document.getElementById("sourceLabel"),
+  rowCount: document.getElementById("rowCount"),
+  colCount: document.getElementById("colCount"),
+};
+
+function setStatus(msg){ els.status.textContent = msg; }
+function setMeta(source, rows, cols){
+  els.sourceLabel.textContent = source || "None";
+  els.rowCount.textContent = String(rows?.length || 0);
+  els.colCount.textContent = String(cols?.length || 0);
+}
+
+const table = new Tabulator("#table", {
+  layout: "fitDataFill",
+  height: "720px",
+  pagination: false,
+  movableColumns: true,
+  resizableColumns: true,
+  selectableRows: 1,
+  placeholder: "Missing",
+
+  virtualDom: true,
+  virtualDomBuffer: 600,
+  rowHeight: 40,
+});
+
+function makeHeaderMenu(field) {
+  return [
+    {
+      label: "Sort ↑",
+      action: function (e, column) {
+        column.getTable().setSort(field, "asc");
+      },
+    },
+    {
+      label: "Sort ↓",
+      action: function (e, column) {
+        column.getTable().setSort(field, "desc");
+      },
+    },
+    { separator: true },
+    {
+      label: function(column){
+        const field = column.getField();
+        const table = column.getTable();
+
+        const container = document.createElement("div");
+        container.style.padding = "5px";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Search...";
+        input.style.width = "140px";
+        input.style.padding = "4px";
+        input.style.fontSize = "12px";
+
+        // get existing filter value
+        const current = (table.getFilters() || []).find(f => f.field === field)?.value;
+        if(current) input.value = current;
+
+        input.addEventListener("keyup", function(e){
+
+          const value = e.target.value.trim();
+
+          // remove existing filters for this column
+          table.getFilters().forEach(f=>{
+            if(f.field === field){
+              table.removeFilter(f.field, f.type, f.value);
+            }
+          });
+
+          if(value){
+            table.addFilter(field, "like", value);
+          }
+
+        });
+
+        container.appendChild(input);
+        return container;
+      },
+      action: function(){ } // required but unused
+    },
+/*     {
+      label: "Clear filter",
+      action: function (e, column) {
+        const table = column.getTable();
+        table.getFilters().forEach(f => {
+          if (f.field === field) table.removeFilter(f.field, f.type, f.value);
+        });
+      }, 
+    }, */
+  ];
+}
+
+// ---------- Column generation ----------
+function buildColumnsFromRows(rows){
+  const keys = rows?.[0] ? Object.keys(rows[0]) : [];
+  return keys.map((k) => ({
+    title: k,
+    field: k,
+
+    // ✅ no default sort button/click UI
+    headerSort: false,
+
+    // ✅ menu for sort + search
+    headerMenu: makeHeaderMenu(k),
+
+    // optional: show a small menu icon in the header
+    headerMenuIcon: "⋮",
+
+    tooltip: true,
+    formatter: (cell) => {
+      const v = cell.getValue();
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      return s.length > 180 ? (s.slice(0,180) + "…") : s;
+    },
+  }));
+}
+
+async function loadRowsIntoTable(sourceLabel, rows){
+  if (!Array.isArray(rows)) throw new Error("Data must be an array of objects.");
+  if (rows.length && (typeof rows[0] !== "object" || rows[0] === null || Array.isArray(rows[0]))) {
+    throw new Error("Rows must be objects like {col:value, ...}");
+  }
+  const cols = buildColumnsFromRows(rows);
+  table.setColumns(cols);
+  await table.setData(rows);
+  setMeta(sourceLabel, rows, cols);
+}
+
+// ---------- CSV parsing (simple, quote-aware-ish) ----------
+function splitCSVLine(line){
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i=0; i<line.length; i++){
+    const ch = line[i];
+    if (ch === '"'){
+      if (inQuotes && line[i+1] === '"'){ cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes){
+      out.push(cur); cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+function parseCSVAsync(text) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: true,
+      worker: true,        // keeps UI responsive
+      complete: (results) => {
+        if (results.errors?.length) {
+          console.warn("CSV parse warnings:", results.errors.slice(0, 5));
+        }
+
+        // 🔥 LIMIT FOR TESTING (change/remove later)
+        const MAX_ROWS = 5000;
+        const data = (results.data || []).slice(0, MAX_ROWS);
+
+        resolve(data);
+      },
+      error: (err) => reject(err),
+    });
+  });
+}
+
+// ---------- JSON parsing ----------
+function parseJSON(text, jsonDataPath){
+  const v = JSON.parse(text);
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object" && jsonDataPath && Array.isArray(v[jsonDataPath])) return v[jsonDataPath];
+  if (v && typeof v === "object" && Array.isArray(v.data)) return v.data; // common fallback
+  throw new Error("JSON must be an array of objects, or use CONFIG.server.jsonDataPath.");
+}
+
+// ---------- Excel parsing ----------
+function parseExcelArrayBuffer(arrayBuffer, sheetIndex){
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const sheetName = wb.SheetNames[sheetIndex] || wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(ws, { defval: "" });
+}
+
+// ---------- Format inference ----------
+function inferFormatFromName(name){
+  const lower = (name || "").toLowerCase();
+  if (lower.endsWith(".csv")) return "csv";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return "excel";
+  return null;
+}
+
+// ---------- Unified parse ----------
+async function parseByFormat(format, blobOrTextOrBuffer, opts){
+  if (format === "csv") {
+    const text = typeof blobOrTextOrBuffer === "string"
+      ? blobOrTextOrBuffer
+      : await blobOrTextOrBuffer.text();
+
+    const rows = await parseCSVAsync(text);
+    return rows;
+  }
+  if (format === "json"){
+    const text = typeof blobOrTextOrBuffer === "string" ? blobOrTextOrBuffer : await blobOrTextOrBuffer.text();
+    return parseJSON(text, opts?.jsonDataPath ?? null);
+  }
+  if (format === "excel"){
+    const buf = blobOrTextOrBuffer instanceof ArrayBuffer ? blobOrTextOrBuffer : await blobOrTextOrBuffer.arrayBuffer();
+    return parseExcelArrayBuffer(buf, opts?.excelSheetIndex ?? 0);
+  }
+  throw new Error("Unsupported format. Use CSV/JSON/Excel.");
+}
+
+// =========================================================
+// MODE: server
+// =========================================================
+async function loadServerMode(){
+  const url = CONFIG.server.datasetUrl;
+  if (!url) throw new Error("CONFIG.server.datasetUrl is empty.");
+
+  const fmt = inferFormatFromName(url);
+  if (!fmt) throw new Error("Cannot infer format from URL. Use .csv/.json/.xlsx/.xls");
+
+  setStatus(`Fetching: ${url}`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed: HTTP ${res.status}`);
+
+  setStatus(`Parsing ${fmt}...`);
+  const blob = await res.blob();
+
+  const rows = await parseByFormat(fmt, blob, {
+    jsonDataPath: CONFIG.server.jsonDataPath,
+    excelSheetIndex: CONFIG.server.excelSheetIndex,
+  });
+
+  console.log("parsed rows:", rows.length, "first row:", rows[0]);
+
+  const cleaned = rows.filter(r => r && typeof r === "object" && Object.keys(r).some(k => String(r[k] ?? "").trim() !== ""));
+  console.log("cleaned rows:", cleaned.length, "first cleaned row:", cleaned[0]);
+
+  await loadRowsIntoTable(`server:${url}`, cleaned);
+  setStatus(`Loaded (${rows.length} rows).`);
+}
+
+// =========================================================
+// MODE: user (no UI)
+// - if CONFIG.user.pastedJson is set -> load it
+// - else if CONFIG.user.filePicker is true -> open file picker automatically
+// =========================================================
+function pickUserFile(){
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.json,.xlsx,.xls";
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.addEventListener("change", () => {
+      const f = input.files?.[0];
+      document.body.removeChild(input);
+      if (!f) return reject(new Error("No file selected."));
+      resolve(f);
+    });
+
+    // If user cancels, change won't fire. Catch that with focus return.
+    window.addEventListener("focus", function onFocus(){
+      window.removeEventListener("focus", onFocus);
+      setTimeout(() => {
+        // If nothing selected after returning focus, treat as cancel
+        if (!input.files || input.files.length === 0) {
+          if (document.body.contains(input)) document.body.removeChild(input);
+          reject(new Error("File picker cancelled."));
+        }
+      }, 300);
+    });
+
+    input.click();
+  });
+}
+
+async function loadUserMode(){
+  if (CONFIG.user.pastedJson) {
+    setStatus("Parsing pasted JSON...");
+    const rows = parseJSON(CONFIG.user.pastedJson, null);
+    await loadRowsIntoTable("user:pastedJson", rows);
+    setStatus(`Loaded (${rows.length} rows).`);
+    return;
+  }
+
+  if (!CONFIG.user.filePicker) {
+    throw new Error("User mode needs CONFIG.user.pastedJson or CONFIG.user.filePicker=true.");
+  }
+
+  setStatus("Opening file picker...");
+  const f = await pickUserFile();
+
+  const fmt = inferFormatFromName(f.name);
+  if (!fmt) throw new Error("Unsupported file type. Use .csv/.json/.xlsx/.xls");
+
+  setStatus(`Reading ${f.name}...`);
+  let rows;
+  if (fmt === "excel") {
+    const buf = await f.arrayBuffer();
+    rows = await parseByFormat(fmt, buf, { excelSheetIndex: 0 });
+  } else {
+    rows = await parseByFormat(fmt, f, {});
+  }
+
+  await loadRowsIntoTable(`user:${f.name}`, rows);
+  setStatus(`Loaded (${rows.length} rows).`);
+}
+
+// =========================================================
+// BOOT
+// =========================================================
+(async function boot(){
+  try{
+    if (CONFIG.mode === "server") await loadServerMode();
+    else if (CONFIG.mode === "user") await loadUserMode();
+    else throw new Error('CONFIG.mode must be "server" or "user".');
+  }catch(e){
+    console.error(e);
+    setStatus(`Error: ${e.message}`);
+  }
+})();
+</script>
+</body>
+</html>

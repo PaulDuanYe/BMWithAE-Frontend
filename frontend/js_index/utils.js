@@ -17,7 +17,8 @@ const state = {
   featureStats: {},  // 特征统计信息
   canDownload: false,  // 是否可以下载transformation规则
   runDemo: true,  // 是否正在运行演示模式
-  data: null  // 数据是否已经经过变换
+  data: null,
+  canViewDetail: false  // 是否可以查看细节
 };
 
 // Configuration Parameters
@@ -56,5 +57,20 @@ const config = {
     length: 10
   }
 };
+
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
+
+function getCaseInsensitive(obj, key) {
+  if (!obj || !key) return undefined;
+
+  const foundKey = Object.keys(obj).find(
+    k => k.toLowerCase() === key.toLowerCase()
+  );
+
+  return obj[foundKey];
+}
+
+document.querySelector('.brand__name').addEventListener('click', () => {
+  window.location.href = 'http://8.148.159.241:8000/';
+});

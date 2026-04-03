@@ -70,6 +70,13 @@ async function handleProtectedAttributesChange() {
   const selectedProtectedAttrs = getSelectedProtectedAttributes();
   const selectedTargetAttrs = getSelectedTargetAttributes();
 
+  displayBiasOverviewLoad();
+  
+  if (!validateAttributeSelection(selectedProtectedAttrs, selectedTargetAttrs)){
+    $('#biasScoreDescription').textContent = 'Invalid Atttibutes Selection';
+    return;
+  }
+
   await displayBiasOverview(selectedProtectedAttrs, selectedTargetAttrs);
 }
 
@@ -77,6 +84,34 @@ async function handleTargetAttributesChange() {
   const selectedProtectedAttrs = getSelectedProtectedAttributes();
   const selectedTargetAttrs = getSelectedTargetAttributes();
 
+  displayBiasOverviewLoad()
+
+  if (!validateAttributeSelection(selectedProtectedAttrs, selectedTargetAttrs)){
+    $('#biasScoreDescription').textContent = 'Invalid Atttibutes Selection';
+    return;
+  }
+
   await displayBiasOverview(selectedProtectedAttrs, selectedTargetAttrs);
   await renderFeatureDistributions(selectedTargetAttrs);
+}
+
+function validateAttributeSelection(protectedAttrs, targetAttr) {
+  const isInvalid = !!(
+    targetAttr &&
+    Array.isArray(protectedAttrs) &&
+    protectedAttrs.includes(targetAttr)
+  );
+
+  if (isInvalid) {
+    alert("Target attribute cannot be one of the protected attributes.");
+    updateProcessStatus('Warning');
+    $('#btnRun').disabled = true;
+
+    return false;
+  } else {
+    updateProcessStatus('Ready');
+    $('#btnRun').disabled = false;
+
+    return true;
+  }
 }

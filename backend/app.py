@@ -276,7 +276,7 @@ def load_demo():
     """Load demo dataset"""
     try:
         data = request.json
-        dataset_name = data.get('dataset_name', 'credit')
+        dataset_name = data.get('dataset_name')
         
         # Get demo dataset configuration
         if dataset_name not in backend_config.DEMO_DATASETS:
@@ -284,8 +284,6 @@ def load_demo():
         
         demo_config = backend_config.DEMO_DATASETS[dataset_name]
         filepath = demo_config['path']
-        target_column = demo_config['target']
-        protected_columns = demo_config['protected']
         
         # Load the dataframe to verify it works
         df = load_file_to_dataframe(filepath)
@@ -1792,43 +1790,81 @@ def run_demo_job(job_id):
     }
 
     job["status"] = "running"
-    job["current_iteration"] = 0
-
+    job["finished_iteration"] = -1
     # Step 2: replay iterations one by one
     for iteration in demo["iterations"]:
-        time.sleep(10)  # 👈 every 5 seconds
+        time.sleep(2)
 
         job["data"]["iterations"].append(iteration)
-        job["current_iteration"] += 1
+        job["finished_iteration"] += 1
 
     # Step 3: add final result
-    time.sleep(5)
-    
     job["status"] = "completed"
     job["data"]["final_results"] = demo["final_results"]
 
+@app.route("/api/process/<job_id>/step", methods=["POST"])
+def run_demo_job_step_api(job_id):
+    try:
+        run_demo_job_step(job_id)
 
+        job = jobs[job_id]
+
+        return jsonify({
+            "job_status": job.get("status"),
+            "finished_iteration": job.get("finished_iteration"),
+            "data": job.get("data"),
+            "log": job.get("log")
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    job = jobs[job_id]
+    demo = DEMO_JSON
+
+    # initialize once
+    if not job["data"]:
+        job["data"] = {"iterations": []}
+        job["status"] = "running"
+        job["finished_iteration"] = -1
+
+    next_index = job["finished_iteration"] + 1
+
+    # add only one iteration per call
+    if next_index < len(demo["iterations"]):
+        job["data"]["iterations"].append(demo["iterations"][next_index])
+        job["finished_iteration"] = next_index
+
+        # if this was the last iteration, finish the job
+        if job["finished_iteration"] == len(demo["iterations"]) - 1:
+            job["status"] = "completed"
+            job["data"]["final_results"] = demo["final_results"]
+
+    return job
 # -----------------------------
 # 1) Start process
 # -----------------------------
 @app.route('/api/process/start', methods=['POST'])
 def start_process():
+    data = request.get_json()
+    step = data.get("step")
     job_id = str(uuid.uuid4())
 
     jobs[job_id] = {
         "status": "created",
-        "data": None
+        "data": None,
+        "finished_iteration" : -1
     }
 
     # Start background thread
-    thread = threading.Thread(target=run_demo_job, args=(job_id,))
+    if not (step == "step"):
+        thread = threading.Thread(target=run_demo_job, args=(job_id,))
     thread.start()
 
     return jsonify({
         "status": "success",
         "job_id": job_id
     })
-
 
 # -----------------------------
 # 2) Get JSON data (polling)
@@ -1843,7 +1879,7 @@ def get_data(job_id):
 
     return jsonify({
         "status": "success",
-        "current_iteration": jobs[job_id]["current_iteration"],
+        "finished_iteration": jobs[job_id]["finished_iteration"],
         "job_status": jobs[job_id]["status"],
         "data": jobs[job_id]["data"]
     })

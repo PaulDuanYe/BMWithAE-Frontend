@@ -112,7 +112,7 @@ function saveConfigFromForm() {
   config.evalMetricFairness = Array.from($$('.checkbox-group input[type="checkbox"]'))
     .filter(cb => cb.checked && ['BNC','BPC','CUAE','EOpp','EO','FDRP','FORP','FNRB','FPRB','NPVP','OAE','PPVP','SP'].includes(cb.value))
     .map(cb => cb.value);
-  
+
   // Get selected accuracy metrics
   config.evalMetricAccuracy = Array.from($$('.checkbox-group input[type="checkbox"]'))
     .filter(cb => cb.checked && ['ACC','F1','Recall','Precision'].includes(cb.value))

@@ -59,17 +59,14 @@ async function importData(){
   
   // Show loading state
   btn.disabled = true;
+  $('#btnLoadDemo').disabled = true;
   btnText.style.display = 'none';
   btnSpinner.style.display = 'inline-block';
   
   try {
     // Need to prompt for target and protected columns
     // For demo, use default columns for credit dataset
-    const result = await api.uploadDataset(
-      state.currentFile,
-      'default payment next month',  // target column
-      ['SEX', 'MARRIAGE']  // protected columns
-    );
+    const result = await api.uploadDataset(state.currentFile);
     
     if (result.status === 'success') {
       state.datasetId = result.data.dataset_id;
@@ -79,6 +76,10 @@ async function importData(){
         `Successfully loaded ${result.data.rows.toLocaleString()} rows and ${result.data.columns} columns from ${result.data.filename}`,
         'success'
       );
+
+      setTimeout(() => {
+        showDataExplorer();
+      }, 300);
     } else {
       throw new Error(result.message);
     }
@@ -90,6 +91,7 @@ async function importData(){
   } finally {
     // Reset button state
     btn.disabled = false;
+    $('#btnLoadDemo').disabled = false;
     btnText.style.display = 'inline';
     btnSpinner.style.display = 'none';
   }
@@ -102,6 +104,7 @@ async function loadDemoData(demoKey){
   
   // Show loading state
   btn.disabled = true;
+  $('#btnImport').disabled = true;
   btnText.style.display = 'none';
   btnSpinner.style.display = 'inline-block';
   
@@ -113,9 +116,7 @@ async function loadDemoData(demoKey){
       state.currentData = result.data.filename;
       
       // Trigger transition to data explorer immediately
-      setTimeout(() => {
-        showDataExplorer();
-      }, 300);
+      await showDataExplorer();
     } else {
       throw new Error(result.message);
     }
@@ -127,6 +128,7 @@ async function loadDemoData(demoKey){
   } finally {
     // Reset button state
     btn.disabled = false;
+    $('#btnImport').disabled = false;
     btnText.style.display = 'inline';
     btnSpinner.style.display = 'none';
   }

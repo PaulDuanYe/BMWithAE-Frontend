@@ -17,26 +17,6 @@ class BMWithAEAPI {
   /**
    * Upload custom dataset
    */
-  async uploadDataset(file, targetColumn, protectedColumns) {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('target_column', targetColumn);
-    protectedColumns.forEach(col => {
-      formData.append('protected_columns[]', col);
-    });
-
-    const response = await fetch(`${this.baseURL}/data/upload`, {
-      method: 'POST',
-      body: formData
-    });
-
-    const data = await response.json();
-    if (data.status === 'success') {
-      this.currentDatasetId = data.data.dataset_id;
-    }
-    return data;
-  }
-
   async uploadDataset(file) {
     const formData = new FormData();
     formData.append('file', file);
@@ -234,15 +214,31 @@ class BMWithAEAPI {
     return await response.json();
   }
 
-  async startDemoJob() {
-    const response = await fetch(
-      `${this.baseURL}/process/start`,
-      {
-        method: 'POST',
-      }
-    );
+  async startDemoJob(step) {
+    const response = await fetch(`${this.baseURL}/process/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ step })
+    });
+
     return await response.json();
   }
+
+  async runDemoJobStep(jobId) {
+    const response = await fetch(`${this.baseURL}/process/${jobId}/step`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("[runDemoJobStep] error:", text);
+      throw new Error(text);
+    }
+
+    return await response.json();
+}
 
   async getDemoJobStatus(jobId) {
     const response = await fetch(

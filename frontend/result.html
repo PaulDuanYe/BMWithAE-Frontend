@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Results</title>
+  <link rel="stylesheet" href="css/result.css" />
+  <link rel="stylesheet" href="css/matrix_D.css" />
+  <script src="js_result/utils.js" defer></script>
+  <script src="js_index/theme.js" defer></script>
+  <script src="js_result/parameterPanel.js" defer></script>
+  <script src="js_result/render.js" defer></script>
+  <script src="js_result/matrix_D.js" defer></script>
+  <script src="js_result/fairnessMatrix.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="js_result/epsilon.js" defer></script>
+  <script src="js_result/app.js" defer></script>
+</head>
+<body>
+  <header class="header">
+    <div class="container header__row">
+      <div class="brand">
+        <span class="brand__mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Central pole -->
+            <line x1="12" y1="4" x2="12" y2="20"/>
+            <!-- Balance beam -->
+            <line x1="5" y1="7" x2="19" y2="7"/>
+            <!-- Left pan -->
+            <path d="M5 7 L3 13 L7 13 Z" fill="currentColor" opacity="0.3"/>
+            <!-- Right pan -->
+            <path d="M19 7 L17 13 L21 13 Z" fill="currentColor" opacity="0.3"/>
+            <!-- Base -->
+            <line x1="9" y1="20" x2="15" y2="20" stroke-width="2.5"/>
+          </svg>
+        </span>
+      <button class="brand__name">BMWithAE</button>
+      </div>
+      <nav class="nav">
+        <button class="btn btn--icon-only" id="btnTheme" title="Toggle Theme">
+          <svg class="theme-icon theme-icon--light" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-icon theme-icon--dark" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <button class="btn btn--ghost" id="btnDocs">Docs</button>
+      </nav>
+    </div>
+  </header>
+  <main class="container main">
+    <div class="workspace">
+      <!-- Left Panel: Load Dataset & Data Explorer -->
+      <aside class="left-panel">
+        <div class="graph-selection-panel" id="graphSelectionPanel">
+          <div class="explorer-header">
+            <h2>Graph Selection</h2>
+          </div>
+          <div class="graph-select-btn-wrapper">
+            <button class="graph-select-btn" id="btnSelectEpsilon">Epsilon</button>
+            <button class="graph-select-btn" id="btnSelectDistanceMatrix">Distance Matrix</button>
+            <button class="graph-select-btn" id="btnSelectOmiga">Omiga</button>
+            <button class="graph-select-btn" id="btnSelectFairnessMatrix">Fairness Matrix</button>
+          </div>
+        </div>
+        <div class="parameter-selection-panel" id="parameterSelectionPanel" style="display: none;">
+          <div class="explorer-header">
+            <button class="btn btn--ghost btn--icon" id="btnBackToSelection" title="Back to Graph Selection">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+              </svg>
+            </button>
+            <h2>Parameter Selection</h2>
+          </div>
+          <div class="parameter-content" id="parameterContent">
+          </div>
+        </div>
+      </aside>
+      <section class="right-panel">
+        <div class="graph-container">
+          <div class="graph-header">
+            <div class="graph-header-left">
+              <h3 id="graphHeaderTitle">Select Graph</h3>
+            </div>
+          </div>
+          <div class="graph-content" id="graphContent">
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

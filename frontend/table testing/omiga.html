@@ -1,0 +1,1517 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iteration Scatterplot Viewer</title>
+
+  <!-- D3.js v7 (CDN). For offline use, download d3.v7.min.js and change this src. -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <link rel="stylesheet" href="omiga.css">
+</head>
+
+<body>
+  <div class="app">
+    <div class="layout">
+      <div class="sidebar">
+        <div class="col">
+          <div class="panel">
+            <h3>Iteration selection</h3>
+            <div class="sub">click to select</div>
+            <div id="iterationList" class="iteration-list"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Axis selection</h3>
+            <div class="sub">click to select (1–3 axes)</div>
+            <div id="axisList" class="axis-list"></div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="panel">
+            <h3>Attribute selection</h3>
+            <div class="sub">click to select</div>
+            <div id="attrList" class="attr-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="placeHolder"></div> <!-- for centering the fixed sidebar -->
+      <div class="line"></div>
+      <div class="main">
+      <div class="viz">
+        <div class="viz-top">
+          <div>
+            <div id="chartTitle" class="title">Loading…</div>
+            <div id="chartSubtitle" class="subtitle">Fetching JSON data…</div>
+          </div>
+
+          <div class="right-top">
+            <div class="legend" aria-label="legend">
+              <div class="legend-item">
+                <span class="legend-swatch" style="border-color: var(--before);"></span>
+                <span>before</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-swatch" style="border-color: var(--after);"></span>
+                <span>after</span>
+              </div>
+            </div>
+
+            <div class="controls" aria-label="controls">
+              <button id="toggleAfterLabelsBtn" class="btn on">After Label: On</button>
+              <button id="toggleBeforeLabelsBtn" class="btn">Before Label: Off</button>
+              <button id="zoomInBtn" class="btn">Zoom In</button>
+              <button id="zoomOutBtn" class="btn">Zoom Out</button>
+              <button id="zoomResetBtn" class="btn">Reset Zoom</button>
+              <button id="reset3DBtn" class="btn" style="display:none;">Reset 3D</button>
+            </div>
+          </div>
+        </div>
+
+        <svg id="chartSvg" role="img" aria-label="scatterplot"></svg>
+
+        <div class="bottom">
+          <div id="status" class="status"></div>
+        </div>
+
+        <div class="table-wrap" id="tableWrap" aria-label="coordinate table">
+          <table id="coordTable">
+            <thead>
+              <tr id="coordTableHead"></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- custom tooltip -->
+        <div id="tooltip" class="tooltip" style="display:none;"></div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <!-- custom toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const JSON_FILE = "omiga.json";
+
+  // =========================
+  // State
+  // =========================
+  const state = {
+    model: null,
+
+    // iteration selection: click to select; click again to unselect
+    currentIteration: 1,
+
+    // attribute hover/pin
+    hoverAttrName: null,
+    selectedAttrName: null,
+
+    // labels toggles
+    showAfterLabels: true,
+    showBeforeLabels: false,
+
+    // axis selection (dimension indices, 0-based), max 3, min 1
+    selectedDims: [0, 1],
+
+    // zoom (applies to 1D/2D axes; 3D uses scale)
+    zoomK: 1,
+
+    // 3D view state
+    rotX: 0.45,
+    rotY: -0.65,
+    dragging: false,
+    dragStart: null,
+
+    // status baseline
+    baseStatus: ''
+  };
+
+  // =========================
+  // Elements
+  // =========================
+  const el = {
+    iterationList: document.getElementById('iterationList'),
+    axisList: document.getElementById('axisList'),
+    attrList: document.getElementById('attrList'),
+
+    chartTitle: document.getElementById('chartTitle'),
+    chartSubtitle: document.getElementById('chartSubtitle'),
+
+    toggleAfterLabelsBtn: document.getElementById('toggleAfterLabelsBtn'),
+    toggleBeforeLabelsBtn: document.getElementById('toggleBeforeLabelsBtn'),
+    zoomInBtn: document.getElementById('zoomInBtn'),
+    zoomOutBtn: document.getElementById('zoomOutBtn'),
+    zoomResetBtn: document.getElementById('zoomResetBtn'),
+    reset3DBtn: document.getElementById('reset3DBtn'),
+
+    status: document.getElementById('status'),
+
+    tableWrap: document.getElementById('tableWrap'),
+    tableHead: document.getElementById('coordTableHead'),
+    tableBody: document.querySelector('#coordTable tbody'),
+
+    toast: document.getElementById('toast'),
+    tooltip: document.getElementById('tooltip'),
+    viz: document.querySelector('.viz')
+  };
+
+  // =========================
+  // Utilities (UI)
+  // =========================
+  let toastTimer = null;
+  function toast(msg) {
+    if (!msg) return;
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.toast.classList.remove('show');
+    }, 2600);
+  }
+
+  function setBaseStatus(msg) {
+    state.baseStatus = msg || '';
+    el.status.textContent = state.baseStatus;
+    el.status.classList.remove('error');
+  }
+
+  function setStatus(msg, kind='info') {
+    if (!msg) {
+      el.status.textContent = state.baseStatus;
+      el.status.classList.remove('error');
+      return;
+    }
+    el.status.textContent = msg;
+    el.status.classList.toggle('error', kind === 'error');
+  }
+
+  function showTooltip(html, clientX, clientY) {
+    const tip = el.tooltip;
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+
+    // position relative to .viz
+    const rect = el.viz.getBoundingClientRect();
+    const pad = 12;
+    const x = clientX - rect.left + pad;
+    const y = clientY - rect.top + pad;
+
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+
+    // keep within viz bounds
+    const tipRect = tip.getBoundingClientRect();
+    const maxX = rect.left + rect.width - 8;
+    const maxY = rect.top + rect.height - 8;
+
+    if (tipRect.right > maxX) {
+      const dx = tipRect.right - maxX;
+      tip.style.left = (x - dx) + 'px';
+    }
+    if (tipRect.bottom > maxY) {
+      const dy = tipRect.bottom - maxY;
+      tip.style.top = (y - dy) + 'px';
+    }
+  }
+
+  function hideTooltip() {
+    el.tooltip.style.display = 'none';
+  }
+
+  // =========================
+  // Data parsing
+  // =========================
+  function dimLabel(index) {
+    return `bias axis ${index + 1}`;
+  }
+
+  function padExtent(ext, frac = 0.08) {
+    const a = ext?.[0], b = ext?.[1];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return [-1, 1];
+    const span = b - a;
+    const p = span === 0 ? (Math.abs(a) || 1) * 0.1 : span * frac;
+    return [a - p, b + p];
+  }
+
+  function expMultipleOf3FromDomain(domain) {
+    const a = Math.abs(domain?.[0] ?? 0);
+    const b = Math.abs(domain?.[1] ?? 0);
+    const maxAbs = Math.max(a, b);
+    if (!Number.isFinite(maxAbs) || maxAbs === 0) return 0;
+    const exp = Math.floor(Math.log10(maxAbs));
+    return Math.floor(exp / 3) * 3;
+  }
+
+  function parseVector(v) {
+    if (v == null) return null;
+
+    if (Array.isArray(v)) {
+      if (v.length === 0) return null;
+      const arr = v.map(Number);
+      if (arr.some(n => !Number.isFinite(n))) return null;
+      return arr;
+    }
+
+    if (typeof v === 'object') {
+      if (Array.isArray(v.values)) return parseVector(v.values);
+      const keys = ['x','y','z','w'];
+      if (keys.some(k => k in v)) {
+        const arr = keys.filter(k => k in v).map(k => Number(v[k]));
+        if (arr.length === 0 || arr.some(n => !Number.isFinite(n))) return null;
+        return arr;
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeCoords(rawCoords, attributes) {
+    const map = new Map();
+
+    if (rawCoords && !Array.isArray(rawCoords) && typeof rawCoords === 'object') {
+      for (const [name, v] of Object.entries(rawCoords)) {
+        const vec = parseVector(v);
+        if (vec) map.set(String(name), vec);
+      }
+      return map;
+    }
+
+    if (Array.isArray(rawCoords)) {
+      for (let idx = 0; idx < rawCoords.length; idx++) {
+        const row = rawCoords[idx];
+
+        if (Array.isArray(row)) {
+          const name = attributes[idx]?.name ?? String(idx);
+          const vec = parseVector(row);
+          if (vec) map.set(name, vec);
+          continue;
+        }
+
+        if (row && typeof row === 'object') {
+          const name = row.name ?? row.label ?? row.id ?? attributes[idx]?.name ?? String(idx);
+          const vec = parseVector(row.values ?? row.coords ?? row.vector ?? row);
+          if (vec) map.set(String(name), vec);
+          continue;
+        }
+      }
+      return map;
+    }
+
+    return map;
+  }
+
+  function getTransformedAttrName(raw, iterIndex, attributes) {
+    return raw[`iteration_${iterIndex}_transformed_attribute`]?.attribute ?? null;
+  }
+
+  function parseModel(raw) {
+    if (!raw || typeof raw !== 'object') throw new Error('JSON root must be an object.');
+
+    // attributes
+    let attributes = [];
+    if (Array.isArray(raw.attributes)) {
+      attributes = raw.attributes.map((a, idx) => {
+        if (typeof a === 'string') return { index: idx, name: a };
+        if (a && typeof a === 'object') {
+          const name = a.name ?? a.label ?? a.id ?? `attr.${idx+1}`;
+          return { index: idx, name: String(name) };
+        }
+        return { index: idx, name: `attr.${idx+1}` };
+      });
+    }
+
+    // iterations
+    const iterKeyRegex = /^iteration_(\d+)_coordinates$/;
+    const iterEntries = Object.keys(raw)
+      .filter(k => iterKeyRegex.test(k))
+      .map(k => ({ i: Number(k.match(iterKeyRegex)[1]), rawCoords: raw[k] }))
+      .sort((a, b) => a.i - b.i);
+
+    if (iterEntries.length === 0) {
+      throw new Error('Cannot find iteration_*_coordinates (e.g. iteration_0_coordinates).');
+    }
+
+    const iterations = iterEntries.map(entry => {
+      const coordsMap = normalizeCoords(entry.rawCoords, attributes);
+      const transformedAttrName = getTransformedAttrName(raw, entry.i, attributes);
+      return { i: entry.i, coords: coordsMap, transformedAttrName };
+    });
+
+    // If attributes not provided, infer from keys
+    if (attributes.length === 0) {
+      const allNames = new Set();
+      for (const it of iterations) for (const name of it.coords.keys()) allNames.add(name);
+      attributes = Array.from(allNames).sort().map((name, idx) => ({ index: idx, name }));
+    }
+
+    const attrNames = attributes.map(d => d.name);
+
+    // Ensure each iteration has all keys (missing => null)
+    for (const it of iterations) {
+      for (const name of attrNames) if (!it.coords.has(name)) it.coords.set(name, null);
+    }
+
+    // Determine dimension count
+    let dimCount = 1;
+    for (const it of iterations) {
+      for (const vec of it.coords.values()) {
+        if (vec && vec.length > dimCount) dimCount = vec.length;
+      }
+    }
+
+    // Global extents per dim
+    const dimMin = Array(dimCount).fill(Number.POSITIVE_INFINITY);
+    const dimMax = Array(dimCount).fill(Number.NEGATIVE_INFINITY);
+
+    for (const it of iterations) {
+      for (const vec of it.coords.values()) {
+        if (!vec) continue;
+        for (let d = 0; d < Math.min(dimCount, vec.length); d++) {
+          const v = vec[d];
+          if (!Number.isFinite(v)) continue;
+          if (v < dimMin[d]) dimMin[d] = v;
+          if (v > dimMax[d]) dimMax[d] = v;
+        }
+      }
+    }
+
+    const dims = [];
+    for (let d = 0; d < dimCount; d++) {
+      let ext = [dimMin[d], dimMax[d]];
+      if (!Number.isFinite(ext[0]) || !Number.isFinite(ext[1])) ext = [-1, 1];
+      const nice = d3.scaleLinear().domain(padExtent(ext)).nice(6).domain();
+
+      const exp = expMultipleOf3FromDomain(nice);
+      const factor = Math.pow(10, exp);
+
+      dims.push({
+        index: d,
+        label: dimLabel(d),
+        extent: nice,
+        exp,
+        factor
+      });
+    }
+
+    const maxI = d3.max(iterations, d => d.i);
+    const minI = d3.min(iterations, d => d.i);
+    const iterMap = new Map(iterations.map(it => [it.i, it]));
+
+    return { attributes, attrNames, iterations, iterMap, maxI, minI, dimCount, dims };
+  }
+
+  // =========================
+  // Chart scaffolding
+  // =========================
+  const OUTER_W = 900;
+  const OUTER_H = 620;
+  const margin = { top: 30, right: 18, bottom: 66, left: 78 };
+  const W = OUTER_W - margin.left - margin.right;
+  const H = OUTER_H - margin.top - margin.bottom;
+
+  const svg = d3.select('#chartSvg').attr('viewBox', `0 0 ${OUTER_W} ${OUTER_H}`);
+  const rootG = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // 2D group
+  const g2D = rootG.append('g').attr('class', 'g2d');
+
+  const zeroG = g2D.append('g').attr('class', 'zero-lines');
+  const xAxisG = g2D.append('g').attr('class', 'axis x-axis');
+  const yAxisG = g2D.append('g').attr('class', 'axis y-axis');
+
+  const xExpText = g2D.append('text').attr('class', 'axis-exp').attr('text-anchor', 'end');
+  const yExpText = g2D.append('text').attr('class', 'axis-exp').attr('text-anchor', 'start');
+
+  const xLabelText = g2D.append('text')
+    .attr('class', 'axis-label')
+    .attr('x', W / 2)
+    .attr('y', H + 52)
+    .attr('text-anchor', 'middle');
+
+  const yLabelText = g2D.append('text')
+    .attr('class', 'axis-label')
+    .attr('x', -H / 2)
+    .attr('y', -58)
+    .attr('transform', 'rotate(-90)')
+    .attr('text-anchor', 'middle');
+
+  const pts2DG = g2D.append('g').attr('class', 'points');
+  const lbl2DG = g2D.append('g').attr('class', 'labels');
+
+  // 3D group
+  const g3D = rootG.append('g').attr('class', 'g3d').style('display', 'none');
+
+  const axes3DG = g3D.append('g').attr('class', 'axes3d');
+  const cubeG  = g3D.append('g').attr('class', 'cube');
+  const pts3DG = g3D.append('g').attr('class', 'points3d');
+  const lbl3DG = g3D.append('g').attr('class', 'labels3d');
+
+  const overlay3D = g3D.append('rect')
+    .attr('class', 'overlay3d')
+    .attr('x', 0).attr('y', 0).attr('width', W).attr('height', H);
+
+  const BASE_R = 5;
+
+  function getMode() {
+    const n = state.selectedDims.length;
+    if (n <= 1) return '1d';
+    if (n === 2) return '2d';
+    return '3d';
+  }
+
+  function updateModeVisibility() {
+    const mode = getMode();
+    const is3D = mode === '3d';
+    g2D.style('display', is3D ? 'none' : null);
+    g3D.style('display', is3D ? null : 'none');
+    el.reset3DBtn.style.display = is3D ? '' : 'none';
+
+    if (!state.model) return;
+  }
+
+  // =========================
+  // Build active iteration data
+  // =========================
+  function getCoordsFor(i) {
+    return state.model?.iterMap.get(i)?.coords ?? null;
+  }
+
+  function buildActiveData() {
+    const model = state.model;
+    if (!model) return null;
+    if (state.currentIteration == null) return null;
+
+    const iterI = state.currentIteration;
+    const beforeI = iterI - 1;
+    const afterI = iterI;
+
+    const afterCoords = getCoordsFor(afterI);
+    if (!afterCoords) return null;
+
+    const beforeCoords = getCoordsFor(beforeI) ?? getCoordsFor(model.minI);
+
+    const rows = model.attributes.map(a => ({
+      name: a.name,
+      before: beforeCoords?.get(a.name) ?? null,
+      after: afterCoords.get(a.name) ?? null
+    }));
+
+    const rowByName = new Map(rows.map(r => [r.name, r]));
+
+    const pts = [];
+    for (const r of rows) {
+      if (r.before) pts.push({ name: r.name, phase: 'before', vec: r.before });
+      if (r.after)  pts.push({ name: r.name, phase: 'after',  vec: r.after  });
+    }
+
+    const labelsBefore = rows
+      .filter(r => r.before)
+      .map(r => ({ name: r.name, phase: 'before', vec: r.before }));
+
+    const labelsAfter = rows
+      .filter(r => r.after)
+      .map(r => ({ name: r.name, phase: 'after', vec: r.after }));
+
+    return { rows, rowByName, pts, labelsBefore, labelsAfter, iterI, beforeI, afterI };
+  }
+
+  // =========================
+  // Highlight (NO radius change)
+  // =========================
+  function applyHighlight() {
+    const active = state.selectedAttrName ?? state.hoverAttrName;
+    const mode = getMode();
+
+    const ptsSel = (mode === '3d')
+      ? pts3DG.selectAll('circle.pt')
+      : pts2DG.selectAll('circle.pt');
+
+    const lblSel = (mode === '3d')
+      ? lbl3DG.selectAll('text.label')
+      : lbl2DG.selectAll('text.label');
+
+    if (!active) {
+      ptsSel.style('opacity', 1);
+      lblSel.style('opacity', 1);
+      return;
+    }
+
+    ptsSel.style('opacity', d => (d.name === active ? 1 : 0.18));
+    lblSel.style('opacity', d => (d.name === active ? 1 : 0.18));
+  }
+
+  function applyTableHighlight() {
+    const active = state.selectedAttrName ?? state.hoverAttrName;
+    d3.select(el.tableBody)
+      .selectAll('tr')
+      .classed('highlight', d => active && d.name === active);
+  }
+
+  // =========================
+  // Tooltip content
+  // =========================
+  function fmtNumber(x) {
+    if (!Number.isFinite(x)) return '';
+    return d3.format('.6~g')(x);
+  }
+
+  function fmtCoord(vec, dims) {
+    if (!vec) return '—';
+    const parts = dims.map(dim => {
+      const v = vec?.[dim];
+      return (v == null || !Number.isFinite(v)) ? '—' : fmtNumber(v);
+    });
+    return '(' + parts.join(', ') + ')';
+  }
+
+  function tooltipHTML(name, hoveredPhase, row, dims) {
+    const b = row?.before ?? null;
+    const a = row?.after ?? null;
+    const badge = hoveredPhase === 'before'
+      ? `<span class="badge before">before</span>`
+      : `<span class="badge after">after</span>`;
+
+    return `
+      <div class="t-title">${escapeHTML(name)} ${badge}</div>
+      <div class="row"><div class="k">before：</div><div class="v">${escapeHTML(fmtCoord(b, dims))}</div></div>
+      <div class="row"><div class="k">after：</div><div class="v">${escapeHTML(fmtCoord(a, dims))}</div></div>
+    `;
+  }
+
+  function escapeHTML(s) {
+    return String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  // =========================
+  // Iteration panel
+  // =========================
+  function updateIterationButtonStyles() {
+    const iterSel = d3.select(el.iterationList).selectAll('button.iter-btn');
+    iterSel.classed('active', d => d === state.currentIteration);
+  }
+
+  function renderIterationList() {
+    const model = state.model;
+    if (!model) return;
+
+    const lastI = model.maxI;
+    const iterData = d3.range(1, lastI + 1);
+
+    d3.select(el.iterationList)
+      .selectAll('button.iter-btn')
+      .data(iterData, d => d)
+      .join(
+        enter => enter.append('button')
+          .attr('class', 'iter-btn')
+          .on('mouseenter', (event, d) => {
+            // hover -> comment (no preview)
+            // setStatus(`提示：按一下選擇 iteration ${d}（比較 ${d-1} vs ${d}）；再按一次可取消選擇。`);
+          })
+          .on('mouseleave', () => {
+            setStatus(null);
+          })
+          .on('click', (event, d) => {
+            state.currentIteration = d;
+            //setBaseStatus(`已選擇 iteration ${d}（比較 ${d-1} vs ${d}）。`);
+/*          if (state.currentIteration === d) {
+              state.currentIteration = null; // unselect
+              setBaseStatus('未選擇 iteration。請喺左邊按一下揀一個 iteration。');
+            } else {
+              state.currentIteration = d;
+              setBaseStatus(`已選擇 iteration ${d}（比較 ${d-1} vs ${d}）。`);
+            } */
+            updateIterationButtonStyles();
+            renderAll();
+          })
+          .text(d => `iteration ${d}`),
+        update => update.text(d => `iteration ${d}`),
+        exit => exit.remove()
+      );
+
+    updateIterationButtonStyles();
+  }
+
+  // =========================
+  // Axis selector (custom alarm)
+  // =========================
+  function renderAxisSelector() {
+    const model = state.model;
+    if (!model) return;
+
+    const maxSelectable = 3;
+
+    function onToggle(dimIndex, checked, inputEl) {
+      const set = new Set(state.selectedDims);
+
+      if (checked) {
+        if (set.size >= maxSelectable) {
+          // custom alarm instead of browser alert
+          inputEl.checked = false;
+          toast('Only up to 3 axes can be selected at the same time.');
+          return;
+        }
+        set.add(dimIndex);
+      } else {
+        set.delete(dimIndex);
+        if (set.size === 0) {
+          // cannot untick last axis (custom alarm)
+          inputEl.checked = true;
+          toast('At least 1 axis must be selected');
+          return;
+        }
+      }
+
+      state.selectedDims = Array.from(set).sort((a, b) => a - b);
+
+      // switching dimensions => reset zoom to avoid surprise
+      state.zoomK = 1;
+
+      updateModeVisibility();
+      renderAxisSelector(); // reflect checkboxes order
+      renderAll();
+    }
+
+    const items = d3.select(el.axisList)
+      .selectAll('label.axis-item')
+      .data(model.dims, d => d.index);
+
+    const enter = items.enter().append('label').attr('class', 'axis-item');
+
+    enter.append('input')
+      .attr('type', 'checkbox')
+      .on('change', function(event, d) {
+        onToggle(d.index, this.checked, this);
+      });
+
+    enter.append('span').attr('class', 'axis-name');
+
+    const merged = enter.merge(items);
+    merged.select('span.axis-name').text(d => d.label);
+    merged.select('input')
+      .property('checked', d => state.selectedDims.includes(d.index));
+
+    items.exit().remove();
+
+    updateModeVisibility();
+  }
+
+  // =========================
+  // Attribute list + auto scroll table
+  // =========================
+function scrollIntoViewInContainer(containerEl, rowEl) {
+  if (!containerEl || !rowEl) return;
+
+  const cRect = containerEl.getBoundingClientRect();
+  const rRect = rowEl.getBoundingClientRect();
+  const rowH = rRect.height;
+
+  // already fully visible
+  if (rRect.top >= cRect.top && rRect.bottom <= cRect.bottom) return;
+
+  if (rRect.top < cRect.top) {
+    // row is above visible area
+    containerEl.scrollTo({
+      top: containerEl.scrollTop - (cRect.top - rRect.top) - rowH,
+      behavior: "smooth"
+    });
+  } else if (rRect.bottom > cRect.bottom) {
+    // row is below visible area
+    containerEl.scrollTo({
+      top: containerEl.scrollTop + (rRect.bottom - cRect.bottom),
+      behavior: "smooth"
+    });
+  }
+}
+
+function scrollTableToAttribute(name) {
+  if (!name) return;
+  const rows = Array.from(el.tableBody.querySelectorAll('tr'));
+  const target = rows.find(tr => tr?.__data__?.name === name);
+  if (target) scrollIntoViewInContainer(el.tableWrap, target);
+}
+
+function scrollAttrListToAttribute(name) {
+  if (!name) return;
+  const items = Array.from(el.attrList.querySelectorAll('.attr-item'));
+  const target = items.find(div => div?.__data__?.name === name);
+  if (target) scrollIntoViewInContainer(el.attrList, target);
+}
+
+  function renderAttrList() {
+    const model = state.model;
+    if (!model) return;
+
+    const items = d3.select(el.attrList)
+      .selectAll('div.attr-item')
+      .data(model.attributes, d => d.name);
+
+    const enter = items.enter()
+      .append('div')
+      .attr('class', 'attr-item')
+      .on('mouseenter', (event, d) => {
+        state.hoverAttrName = d.name;
+        applyHighlight();
+        applyTableHighlight();
+      })
+      .on('mouseleave', () => {
+        state.hoverAttrName = null;
+        applyHighlight();
+        applyTableHighlight();
+      })
+      .on('click', (event, d) => {
+        state.selectedAttrName = (state.selectedAttrName === d.name) ? null : d.name;
+        renderAttrListState();
+        applyHighlight();
+        applyTableHighlight();
+
+        // auto scroll table to selected attribute
+        if (state.selectedAttrName) {
+          scrollTableToAttribute(state.selectedAttrName);
+          scrollAttrListToAttribute(state.selectedAttrName);
+        }
+      });
+
+    enter.append('span').attr('class', 'star').text('★');
+    enter.append('div').attr('class', 'attr-name');
+
+    enter.merge(items).select('.attr-name').text(d => d.name);
+
+    items.exit().remove();
+
+    renderAttrListState();
+  }
+
+  function renderAttrListState() {
+    const model = state.model;
+    if (!model) return;
+
+    let transformedName = null;
+    if (state.currentIteration != null) {
+      transformedName = model.iterMap.get(state.currentIteration)?.transformedAttrName ?? null;
+    }
+
+    const sel = d3.select(el.attrList)
+      .selectAll('div.attr-item')
+      .data(model.attributes, d => d.name);
+
+    sel.classed('selected', d => d.name === state.selectedAttrName);
+    sel.select('.star').classed('on', d => transformedName && d.name === transformedName);
+  }
+
+  // =========================
+  // Zoom controls
+  // =========================
+  function clampZoomK(k) {
+    // reasonable bounds
+    return Math.max(0.4, Math.min(6.0, k));
+  }
+
+  function zoomAroundCenterTransform(k) {
+    // For 2D axis rescale
+    const cx = W / 2;
+    const cy = H / 2;
+    return d3.zoomIdentity.translate(cx, cy).scale(k).translate(-cx, -cy);
+  }
+
+  function zoomIn()  { state.zoomK = clampZoomK(state.zoomK * 1.25); renderAll(); }
+  function zoomOut() { state.zoomK = clampZoomK(state.zoomK / 1.25); renderAll(); }
+  function zoomReset(){ state.zoomK = 1; renderAll(); }
+
+  // =========================
+  // Render chart + table
+  // =========================
+  function renderEmpty() {
+    // clear plot
+    pts2DG.selectAll('*').remove();
+    lbl2DG.selectAll('*').remove();
+    zeroG.selectAll('*').remove();
+    xAxisG.selectAll('*').remove();
+    yAxisG.selectAll('*').remove();
+
+    axes3DG.selectAll('*').remove();
+    cubeG.selectAll('*').remove();
+    pts3DG.selectAll('*').remove();
+    lbl3DG.selectAll('*').remove();
+
+    // header
+    el.chartTitle.textContent = '未選擇 iteration';
+    el.chartSubtitle.textContent = '請喺左邊撳一個 iteration 以顯示 scatterplot。';
+
+    // table
+    d3.select(el.tableHead).selectAll('th').remove();
+    d3.select(el.tableBody).selectAll('tr').remove();
+
+    renderAttrListState();
+    hideTooltip();
+  }
+
+  function renderChart() {
+    const model = state.model;
+    if (!model) return;
+
+    updateModeVisibility();
+
+    if (state.currentIteration == null) {
+      renderEmpty();
+      return;
+    }
+
+    const payload = buildActiveData();
+    if (!payload) {
+      setStatus('Unable to render: fail to fetch iteration coordinates.', 'error');
+      renderEmpty();
+      return;
+    }
+
+    const { pts, labelsBefore, labelsAfter, iterI, beforeI, afterI } = payload;
+    const mode = getMode();
+
+    const axesText = state.selectedDims.map(d => dimLabel(d)).join(', ');
+    const modeText = (mode === '1d') ? `1D (${axesText})`
+                    : (mode === '2d') ? `2D (${axesText})`
+                    : `3D (${axesText})`;
+
+    el.chartTitle.textContent = `iteration ${iterI}`;
+    el.chartSubtitle.textContent =
+      `before: iteration_${beforeI}  •  after: iteration_${afterI}`;
+
+    if (mode === '3d') render3D(payload, pts, labelsBefore, labelsAfter);
+    else render2D(payload, pts, labelsBefore, labelsAfter);
+
+    applyHighlight();
+  }
+
+  function render2D(payload, pts, labelsBefore, labelsAfter) {
+    const model = state.model;
+    const dims = state.selectedDims.slice();
+    const xDim = dims[0];
+    const yDim = dims[1] ?? null;
+
+    const xMeta = model.dims[xDim];
+    const yMeta = (yDim != null) ? model.dims[yDim] : null;
+
+    const baseX = d3.scaleLinear().domain(xMeta.extent).range([0, W]);
+    const baseY = (yDim != null)
+      ? d3.scaleLinear().domain(yMeta.extent).range([H, 0])
+      : d3.scaleLinear().domain([-1, 1]).range([H, 0]); // baseline for 1D
+
+    // zoom
+    const t = zoomAroundCenterTransform(state.zoomK);
+    const xScale = t.rescaleX(baseX);
+    const yScale = (yDim != null) ? t.rescaleY(baseY) : baseY;
+
+    const is1D = (getMode() === '1d');
+    const xAxisY = is1D ? yScale(0) : H;
+
+    xAxisG.attr('transform', `translate(0,${xAxisY})`);
+    yAxisG.attr('transform', `translate(0,0)`);
+
+    xLabelText.text(xMeta.label);
+    yLabelText.text(yDim != null ? yMeta.label : '');
+
+    // Exponent labels should follow current zoomed domain
+    const currXDomain = xScale.domain();
+    const xExp = expMultipleOf3FromDomain(currXDomain);
+    const xFactor = Math.pow(10, xExp);
+
+    let yExp = 0, yFactor = 1;
+    if (yDim != null) {
+      const currYDomain = yScale.domain();
+      yExp = expMultipleOf3FromDomain(currYDomain);
+      yFactor = Math.pow(10, yExp);
+    }
+
+    const fmt = d3.format('~g');
+
+    xAxisG.call(
+      d3.axisBottom(xScale)
+        .ticks(6)
+        .tickFormat(d => fmt(d / xFactor))
+    );
+
+    if (yDim != null) {
+      yAxisG.style('display', null);
+      yAxisG.call(
+        d3.axisLeft(yScale)
+          .ticks(6)
+          .tickFormat(d => fmt(d / yFactor))
+      );
+    } else {
+      yAxisG.style('display', 'none');
+    }
+
+    xExpText
+      .attr('x', W)
+      .attr('y', xAxisY - 8)
+      .text(xExp !== 0 ? `1e${xExp}` : '');
+
+    yExpText
+      .attr('x', 0)
+      .attr('y', -12)
+      .text((yDim != null && yExp !== 0) ? `1e${yExp}` : '');
+
+    // Zero lines (2D only)
+    if (yDim != null) {
+      const zeros = [];
+      const xd = xScale.domain(), yd = yScale.domain();
+      if (xd[0] <= 0 && xd[1] >= 0) zeros.push({type:'x0'});
+      if (yd[0] <= 0 && yd[1] >= 0) zeros.push({type:'y0'});
+
+      zeroG.style('display', null);
+
+      zeroG.selectAll('line.zero-line')
+        .data(zeros, d => d.type)
+        .join(
+          enter => enter.append('line').attr('class','zero-line'),
+          update => update,
+          exit => exit.remove()
+        )
+        .attr('x1', d => d.type === 'x0' ? xScale(0) : 0)
+        .attr('x2', d => d.type === 'x0' ? xScale(0) : W)
+        .attr('y1', d => d.type === 'y0' ? yScale(0) : 0)
+        .attr('y2', d => d.type === 'y0' ? yScale(0) : H);
+    } else {
+      zeroG.style('display', 'none');
+    }
+
+    function toXY(vec) {
+      if (!vec || vec.length <= xDim) return null;
+      const x = vec[xDim];
+      if (!Number.isFinite(x)) return null;
+
+      if (yDim == null) {
+        return { x: xScale(x), y: yScale(0) };
+      }
+
+      if (vec.length <= yDim) return null;
+      const y = vec[yDim];
+      if (!Number.isFinite(y)) return null;
+
+      return { x: xScale(x), y: yScale(y) };
+    }
+
+    // Points
+    const ptSel = pts2DG.selectAll('circle.pt')
+      .data(pts, d => `${d.name}|${d.phase}`);
+
+    ptSel.join(
+      enter => enter.append('circle')
+        .attr('class', d => `pt ${d.phase}`)
+        .attr('r', BASE_R)
+        .on('mouseenter', (event, d) => {
+          const dimsNow = state.selectedDims.slice();
+          const row = payload.rowByName.get(d.name);
+          showTooltip(tooltipHTML(d.name, d.phase, row, dimsNow), event.clientX, event.clientY);
+        })
+        .on('mousemove', (event, d) => {
+          const dimsNow = state.selectedDims.slice();
+          const row = payload.rowByName.get(d.name);
+          showTooltip(tooltipHTML(d.name, d.phase, row, dimsNow), event.clientX, event.clientY);
+        })
+        .on('mouseleave', () => hideTooltip()),
+      update => update,
+      exit => exit.remove()
+    )
+    .attr('cx', d => (toXY(d.vec)?.x ?? -9999))
+    .attr('cy', d => (toXY(d.vec)?.y ?? -9999))
+    .style('display', d => toXY(d.vec) ? null : 'none');
+
+    // Labels (before + after, separately toggled)
+    const labelData = []
+      .concat(state.showBeforeLabels ? labelsBefore : [])
+      .concat(state.showAfterLabels ? labelsAfter : []);
+
+    const lblSel = lbl2DG.selectAll('text.label')
+      .data(labelData, d => `${d.name}|${d.phase}`);
+
+    lblSel.join(
+      enter => enter.append('text')
+        .attr('class', d => `label ${d.phase}`),
+      update => update,
+      exit => exit.remove()
+    )
+    .text(d => d.name)
+    .attr('x', d => {
+      const p = toXY(d.vec);
+      if (!p) return -9999;
+      return d.phase === 'before' ? (p.x - 8) : (p.x + 8);
+    })
+    .attr('y', d => {
+      const p = toXY(d.vec);
+      return p ? p.y : -9999;
+    })
+    .attr('text-anchor', d => d.phase === 'before' ? 'end' : 'start')
+    .style('display', d => toXY(d.vec) ? null : 'none');
+
+    applyHighlight();
+  }
+
+  function render3D(payload, pts, labelsBefore, labelsAfter) {
+    const model = state.model;
+    const dims = state.selectedDims.slice();
+    const xDim = dims[0], yDim = dims[1], zDim = dims[2];
+
+    const xMeta = model.dims[xDim];
+    const yMeta = model.dims[yDim];
+    const zMeta = model.dims[zDim];
+
+    function norm(v, meta) {
+      const a = meta.extent[0], b = meta.extent[1];
+      if (!Number.isFinite(v) || !Number.isFinite(a) || !Number.isFinite(b)) return 0;
+      if (a === b) return 0;
+      return ((v - a) / (b - a)) - 0.5; // [-0.5..0.5]
+    }
+
+    function rotate(p) {
+      const cosY = Math.cos(state.rotY), sinY = Math.sin(state.rotY);
+      const cosX = Math.cos(state.rotX), sinX = Math.sin(state.rotX);
+
+      // yaw around Y
+      const x1 = p.x * cosY + p.z * sinY;
+      const z1 = -p.x * sinY + p.z * cosY;
+      const y1 = p.y;
+
+      // pitch around X
+      const y2 = y1 * cosX - z1 * sinX;
+      const z2 = y1 * sinX + z1 * cosX;
+
+      return { x: x1, y: y2, z: z2 };
+    }
+
+    const centerX = W / 2;
+    const centerY = H / 2;
+    const plotScale = Math.min(W, H) * 0.92 * state.zoomK;
+    const cam = 2.5;
+
+    function project(p) {
+      const r = rotate(p);
+      const denom = (cam - r.z);
+      const k = denom !== 0 ? (cam / denom) : 1;
+      return {
+        x: centerX + r.x * plotScale * k,
+        y: centerY - r.y * plotScale * k,
+        z: r.z
+      };
+    }
+
+    function toXYZ(vec) {
+      if (!vec) return null;
+      if (vec.length <= Math.max(xDim, yDim, zDim)) return null;
+
+      const x = vec[xDim], y = vec[yDim], z = vec[zDim];
+      if (![x,y,z].every(Number.isFinite)) return null;
+
+      return { x: norm(x, xMeta), y: norm(y, yMeta), z: norm(z, zMeta) };
+    }
+
+    // cube (unit cube centered at 0)
+    const c = [-0.5, 0.5];
+    const corners = [
+      {x:c[0], y:c[0], z:c[0]}, {x:c[1], y:c[0], z:c[0]},
+      {x:c[1], y:c[1], z:c[0]}, {x:c[0], y:c[1], z:c[0]},
+      {x:c[0], y:c[0], z:c[1]}, {x:c[1], y:c[0], z:c[1]},
+      {x:c[1], y:c[1], z:c[1]}, {x:c[0], y:c[1], z:c[1]}
+    ];
+
+    const edges = [
+      [0,1],[1,2],[2,3],[3,0],
+      [4,5],[5,6],[6,7],[7,4],
+      [0,4],[1,5],[2,6],[3,7]
+    ].map(([a,b]) => ({ a: corners[a], b: corners[b] }));
+
+    cubeG.selectAll('line.cube-edge')
+      .data(edges)
+      .join(
+        enter => enter.append('line').attr('class','cube-edge'),
+        update => update,
+        exit => exit.remove()
+      )
+      .attr('x1', d => project(d.a).x)
+      .attr('y1', d => project(d.a).y)
+      .attr('x2', d => project(d.b).x)
+      .attr('y2', d => project(d.b).y);
+
+    // 3D axes (origin + ticks + labels)
+    // Use cube corner (-0.5,-0.5,-0.5) as reference "origin" of bounding box.
+    const cubeOrigin = { x: -0.5, y: -0.5, z: -0.5 };
+    const xEnd = { x:  0.5, y: -0.5, z: -0.5 };
+    const yEnd = { x: -0.5, y:  0.5, z: -0.5 };
+    const zEnd = { x: -0.5, y: -0.5, z:  0.5 };
+
+    // tick generation in raw domain
+    function ticksFor(meta, count=5) {
+      const d = meta.extent;
+      return d3.ticks(d[0], d[1], count);
+    }
+
+    const xTicks = ticksFor(xMeta, 5).map(v => ({ axis:'x', v, p:{ x:norm(v,xMeta), y:-0.5, z:-0.5 } }));
+    const yTicks = ticksFor(yMeta, 5).map(v => ({ axis:'y', v, p:{ x:-0.5, y:norm(v,yMeta), z:-0.5 } }));
+    const zTicks = ticksFor(zMeta, 5).map(v => ({ axis:'z', v, p:{ x:-0.5, y:-0.5, z:norm(v,zMeta) } }));
+
+    const axisLines = [
+      { axis:'x', a:cubeOrigin, b:xEnd, label:xMeta.label, meta:xMeta },
+      { axis:'y', a:cubeOrigin, b:yEnd, label:yMeta.label, meta:yMeta },
+      { axis:'z', a:cubeOrigin, b:zEnd, label:zMeta.label, meta:zMeta }
+    ];
+
+    // Draw axis lines
+    axes3DG.selectAll('line.axis3d-line')
+      .data(axisLines, d => d.axis)
+      .join(
+        enter => enter.append('line').attr('class','axis3d-line'),
+        update => update,
+        exit => exit.remove()
+      )
+      .attr('x1', d => project(d.a).x)
+      .attr('y1', d => project(d.a).y)
+      .attr('x2', d => project(d.b).x)
+      .attr('y2', d => project(d.b).y);
+
+    // Origin dot
+    axes3DG.selectAll('circle.origin-dot')
+      .data([cubeOrigin])
+      .join(
+        enter => enter.append('circle').attr('class','origin-dot'),
+        update => update,
+        exit => exit.remove()
+      )
+      .attr('r', 3.6)
+      .attr('cx', d => project(d).x)
+      .attr('cy', d => project(d).y);
+
+    // Axis label at end (with exponent hint)
+    axes3DG.selectAll('text.axis3d-label')
+      .data(axisLines, d => d.axis)
+      .join(
+        enter => enter.append('text').attr('class','axis3d-label'),
+        update => update,
+        exit => exit.remove()
+      )
+      .text(d => {
+        const exp = expMultipleOf3FromDomain(d.meta.extent);
+        return exp !== 0 ? `${d.label} (1e${exp})` : d.label;
+      })
+      .attr('x', d => project(d.b).x + 6)
+      .attr('y', d => project(d.b).y + 2);
+
+    // Tick marks + tick labels
+    const allTicks = xTicks.concat(yTicks, zTicks);
+
+    // tick line (short segment perpendicular-ish in screen space)
+    // We approximate by drawing tiny offset in y-direction in 3D local space.
+    function tickSegment(tp, axis) {
+      const len = 0.03; // in cube units
+      if (axis === 'x') return { a: tp, b: { x: tp.x, y: tp.y + len, z: tp.z } };
+      if (axis === 'y') return { a: tp, b: { x: tp.x + len, y: tp.y, z: tp.z } };
+      return { a: tp, b: { x: tp.x + len, y: tp.y, z: tp.z } };
+    }
+
+    axes3DG.selectAll('line.axis3d-tick')
+      .data(allTicks, d => `${d.axis}|${d.v}`)
+      .join(
+        enter => enter.append('line').attr('class','axis3d-tick'),
+        update => update,
+        exit => exit.remove()
+      )
+      .attr('x1', d => project(tickSegment(d.p, d.axis).a).x)
+      .attr('y1', d => project(tickSegment(d.p, d.axis).a).y)
+      .attr('x2', d => project(tickSegment(d.p, d.axis).b).x)
+      .attr('y2', d => project(tickSegment(d.p, d.axis).b).y);
+
+    function tickText(meta, v) {
+      const exp = expMultipleOf3FromDomain(meta.extent);
+      const factor = Math.pow(10, exp);
+      return d3.format('~g')(v / factor);
+    }
+
+    axes3DG.selectAll('text.axis3d-ticktext')
+      .data(allTicks, d => `${d.axis}|${d.v}`)
+      .join(
+        enter => enter.append('text').attr('class','axis3d-ticktext'),
+        update => update,
+        exit => exit.remove()
+      )
+      .text(d => {
+        const meta = (d.axis === 'x') ? xMeta : (d.axis === 'y') ? yMeta : zMeta;
+        return tickText(meta, d.v);
+      })
+      .attr('x', d => project(d.p).x + 6)
+      .attr('y', d => project(d.p).y + 4);
+
+    // Points
+    const ptSel = pts3DG.selectAll('circle.pt')
+      .data(pts, d => `${d.name}|${d.phase}`);
+
+    ptSel.join(
+      enter => enter.append('circle')
+        .attr('class', d => `pt ${d.phase}`)
+        .attr('r', BASE_R)
+        .on('mouseenter', (event, d) => {
+          const dimsNow = state.selectedDims.slice();
+          const row = payload.rowByName.get(d.name);
+          showTooltip(tooltipHTML(d.name, d.phase, row, dimsNow), event.clientX, event.clientY);
+        })
+        .on('mousemove', (event, d) => {
+          const dimsNow = state.selectedDims.slice();
+          const row = payload.rowByName.get(d.name);
+          showTooltip(tooltipHTML(d.name, d.phase, row, dimsNow), event.clientX, event.clientY);
+        })
+        .on('mouseleave', () => hideTooltip()),
+      update => update,
+      exit => exit.remove()
+    )
+    .attr('cx', d => {
+      const p3 = toXYZ(d.vec);
+      if (!p3) return -9999;
+      return project(p3).x;
+    })
+    .attr('cy', d => {
+      const p3 = toXYZ(d.vec);
+      if (!p3) return -9999;
+      return project(p3).y;
+    })
+    .style('display', d => toXYZ(d.vec) ? null : 'none');
+
+    // Labels (before + after, separately toggled)
+    const labelData = []
+      .concat(state.showBeforeLabels ? labelsBefore : [])
+      .concat(state.showAfterLabels ? labelsAfter : []);
+
+    const lblSel = lbl3DG.selectAll('text.label')
+      .data(labelData, d => `${d.name}|${d.phase}`);
+
+    lblSel.join(
+      enter => enter.append('text')
+        .attr('class', d => `label ${d.phase}`),
+      update => update,
+      exit => exit.remove()
+    )
+    .text(d => d.name)
+    .attr('x', d => {
+      const p3 = toXYZ(d.vec);
+      if (!p3) return -9999;
+      const p2 = project(p3);
+      return d.phase === 'before' ? (p2.x - 8) : (p2.x + 8);
+    })
+    .attr('y', d => {
+      const p3 = toXYZ(d.vec);
+      if (!p3) return -9999;
+      return project(p3).y;
+    })
+    .attr('text-anchor', d => d.phase === 'before' ? 'end' : 'start')
+    .style('display', d => toXYZ(d.vec) ? null : 'none');
+
+    applyHighlight();
+  }
+
+  function renderTable() {
+    const model = state.model;
+    if (!model) return;
+
+    if (state.currentIteration == null) {
+      d3.select(el.tableHead).selectAll('th').remove();
+      d3.select(el.tableBody).selectAll('tr').remove();
+      return;
+    }
+
+    const payload = buildActiveData();
+    if (!payload) return;
+
+    const { rows } = payload;
+    const dims = state.selectedDims.slice();
+
+    const columns = [
+      { key: 'name', label: 'attribute', cell: r => r.name },
+
+      ...dims.map(dim => ({
+        key: `b${dim}`,
+        label: `before ${dimLabel(dim)}`,
+        cell: r => {
+          const v = r.before?.[dim];
+          return (v == null) ? '' : fmtNumber(v);
+        }
+      })),
+
+      ...dims.map(dim => ({
+        key: `a${dim}`,
+        label: `after ${dimLabel(dim)}`,
+        cell: r => {
+          const v = r.after?.[dim];
+          return (v == null) ? '' : fmtNumber(v);
+        }
+      }))
+    ];
+
+    d3.select(el.tableHead)
+      .selectAll('th')
+      .data(columns, d => d.key)
+      .join(
+        enter => enter.append('th'),
+        update => update,
+        exit => exit.remove()
+      )
+      .text(d => d.label);
+
+    const tr = d3.select(el.tableBody)
+      .selectAll('tr')
+      .data(rows, d => d.name);
+
+    tr.join(
+      enter => enter.append('tr'),
+      update => update,
+      exit => exit.remove()
+    ).each(function(row){
+      const td = d3.select(this)
+        .selectAll('td')
+        .data(columns, c => c.key);
+
+      td.join(
+        enter => enter.append('td'),
+        update => update,
+        exit => exit.remove()
+      ).text(c => c.cell(row));
+    });
+
+    applyTableHighlight();
+
+    // If attribute is pinned, keep it visible after re-render
+    if (state.selectedAttrName) scrollTableToAttribute(state.selectedAttrName);
+  }
+
+  function renderAll() {
+    renderAttrListState();
+    renderChart();
+    renderTable();
+    applyHighlight();
+    applyTableHighlight();
+  }
+
+  // =========================
+  // Controls
+  // =========================
+  function syncLabelButtons() {
+    el.toggleAfterLabelsBtn.classList.toggle('on', state.showAfterLabels);
+    el.toggleAfterLabelsBtn.textContent = state.showAfterLabels ? 'After Label: On' : 'After Label: Off';
+
+    el.toggleBeforeLabelsBtn.classList.toggle('on', state.showBeforeLabels);
+    el.toggleBeforeLabelsBtn.textContent = state.showBeforeLabels ? 'Before Label: On' : 'Before Label: Off';
+  }
+
+  el.toggleAfterLabelsBtn.addEventListener('click', () => {
+    state.showAfterLabels = !state.showAfterLabels;
+    syncLabelButtons();
+    renderChart();
+  });
+
+  el.toggleBeforeLabelsBtn.addEventListener('click', () => {
+    state.showBeforeLabels = !state.showBeforeLabels;
+    syncLabelButtons();
+    renderChart();
+  });
+
+  el.zoomInBtn.addEventListener('click', () => zoomIn());
+  el.zoomOutBtn.addEventListener('click', () => zoomOut());
+  el.zoomResetBtn.addEventListener('click', () => zoomReset());
+
+  el.reset3DBtn.addEventListener('click', () => {
+    state.rotX = 0.45;
+    state.rotY = -0.65;
+    renderChart();
+  });
+
+  // 3D drag rotation
+  overlay3D.on('pointerdown', (event) => {
+    if (getMode() !== '3d') return;
+
+    state.dragging = true;
+    state.dragStart = {
+      x: event.clientX,
+      y: event.clientY,
+      rotX: state.rotX,
+      rotY: state.rotY
+    };
+
+    overlay3D.classed('dragging', true);
+    overlay3D.node().setPointerCapture(event.pointerId);
+  });
+
+  overlay3D.on('pointermove', (event) => {
+    if (!state.dragging || getMode() !== '3d') return;
+    const dx = event.clientX - state.dragStart.x;
+    const dy = event.clientY - state.dragStart.y;
+
+    state.rotY = state.dragStart.rotY + dx * 0.01;
+    state.rotX = state.dragStart.rotX + dy * 0.01;
+
+    const lim = Math.PI / 2 - 0.02;
+    state.rotX = Math.max(-lim, Math.min(lim, state.rotX));
+
+    renderChart();
+  });
+
+  overlay3D.on('pointerup pointercancel', () => {
+    if (!state.dragging) return;
+    state.dragging = false;
+    state.dragStart = null;
+    overlay3D.classed('dragging', false);
+  });
+
+  // Hide tooltip if mouse leaves svg area
+  svg.on('mouseleave', () => hideTooltip());
+
+  // =========================
+  // Init
+  // =========================
+  function initFromModel(model) {
+    state.model = model;
+
+    // default axes: 2D if possible else 1D
+    if (model.dimCount <= 1) state.selectedDims = [0];
+    else state.selectedDims = [0, 1];
+
+    // default iteration: unselected per new requirement
+    state.currentIteration = 1;
+
+    // reset others
+    state.zoomK = 1;
+    state.selectedAttrName = null;
+    state.hoverAttrName = null;
+
+    renderIterationList();
+    renderAxisSelector();
+    renderAttrList();
+
+    syncLabelButtons();
+    updateModeVisibility();
+
+    setBaseStatus('');
+    renderAll();
+  }
+
+  setBaseStatus(`Loading ${JSON_FILE}…`);
+  fetch(JSON_FILE, { cache: 'no-store' })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .then(data => initFromModel(parseModel(data)))
+    .catch(err => {
+      console.error(err);
+      setStatus(`Load fail：${err.message}`, 'error');
+      el.chartTitle.textContent = 'Load failed';
+    });
+
+})();
+</script>
+</body>
+</html>

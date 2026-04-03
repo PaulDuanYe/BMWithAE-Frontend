@@ -1,9 +1,21 @@
-function showDownloadButton() {
-  $('#runBtnText').textContent = 'Download Transforms';
+function showViewDetailsButton() {
+  $('#runBtnText').textContent = 'View Details';
   $('#btnRun').disabled = false;
-  $('#btnRun').classList.add('btn--download');
+  $('#btnRun').classList.add('view-detail');
   state.isRunning = false;
-  state.canDownload = true;
+  state.canViewDetail = true;
+}
+
+function transitionToResultsPage() {
+  const overlay = document.createElement('div');
+  overlay.className = 'page-overlay';
+  document.body.appendChild(overlay);
+
+  document.body.classList.add('page-exit');
+
+  setTimeout(() => {
+    window.location.href = 'result.html';
+  }, 500);
 }
 
 // Show/hide log download button

@@ -1,0 +1,62 @@
+body{
+  margin:0;
+  font-family: system-ui;
+  background:#f5f6f8;
+}
+
+.layout{
+  display:flex;
+  height:100vh;
+}
+
+/* sidebar */
+
+.sidebar{
+  width:240px;
+  background:white;
+  border-right:1px solid #e5e7eb;
+  transition:width .25s;
+  position:relative;
+}
+
+.sidebar.closed{
+  width:56px;
+}
+
+/* toggle button */
+
+.toggle{
+  position:absolute;
+  top:20px;
+  right:-12px;
+
+  width:24px;
+  height:24px;
+
+  background:white;
+  border:1px solid #ddd;
+  border-radius:50%;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  cursor:pointer;
+  font-size:14px;
+}
+
+/* main area */
+
+.main{
+  flex:1;
+  padding:30px;
+}
+
+/* visualization card */
+
+.viz{
+  height:100%;
+  background:white;
+  border-radius:10px;
+  border:1px solid #e5e7eb;
+}

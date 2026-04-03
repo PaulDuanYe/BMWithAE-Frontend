@@ -4,21 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BMWithAE — Home</title>
-  <link rel="stylesheet" href="styles.css" />
-  <script src="api.js"></script>
-  
-  <script src="utils.js" defer></script>
-  <script src="theme.js" defer></script>
-  <script src="loadData.js" defer></script>
-  <script src="attributeSelection.js" defer></script>
-  <script src="dataExplorer.js" defer></script>
-  <script src="subgroup.js" defer></script>
-  <script src="configModal.js" defer></script>
-  <script src="display.js" defer></script>
-  <script src="download.js" defer></script>
-  <script src="poll.js" defer></script>
-  <script src="processControl.js" defer></script>
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <script src="js_index/api.js"></script>
+  <script src="js_index/utils.js" defer></script>
+  <script src="js_index/theme.js" defer></script>
+  <script src="js_index/loadData.js" defer></script>
+  <script src="js_index/attributeSelection.js" defer></script>
+  <script src="js_index/dataExplorer.js" defer></script>
+  <script src="js_index/subgroup.js" defer></script>
+  <script src="js_index/configModal.js" defer></script>
+  <script src="js_index/display.js" defer></script>
+  <script src="js_index/afterProcess.js" defer></script>
+  <script src="js_index/poll.js" defer></script>
+  <script src="js_index/processControl.js" defer></script>
+  <script src="js_index/app.js" defer></script>
 </head>
 <body>
   <!-- Header -->
@@ -39,7 +39,7 @@
             <line x1="9" y1="20" x2="15" y2="20" stroke-width="2.5"/>
           </svg>
         </span>
-        <span class="brand__name">BMWithAE</span>
+      <button class="brand__name">BMWithAE</button>
       </div>
       <nav class="nav">
         <button class="btn btn--icon-only" id="btnTheme" title="Toggle Theme">
@@ -72,7 +72,7 @@
           <div class="section-header">
             <h2>Load Dataset</h2>
             <p class="muted">Import your data or explore with demo datasets</p>
-        </div>
+          </div>
 
           <!-- Custom Upload -->
           <div class="upload-section">
@@ -117,7 +117,6 @@
               <select class="demo-select-box" id="demoSelectBox">
                 <option value="">Select a demo dataset...</option>
                 <option value="compas">COMPAS Recidivism</option>
-                <option value="adult">Adult Income Census</option>
                 <option value="credit">Credit Default</option>
               </select>
               <button class="btn btn--primary btn--full" id="btnLoadDemo">
@@ -136,7 +135,7 @@
             <!-- Load Status Message -->
             <div class="load-status" id="demoLoadStatus" style="display:none;"></div>
       </div>
-    </div>
+        </div>
         
         <!-- Data Explorer Panel (Hidden Initially) -->
         <div class="data-explorer-panel" id="dataExplorerPanel" style="display: none;">
@@ -390,7 +389,7 @@
             </div>
       </div>
     </div>
-  </section>
+      </section>
     </div>
   </main>
 

@@ -1,18 +1,28 @@
-function showDataExplorer() {
+async function showDataExplorer() {
     const loadPanel = $('#loadDatasetPanel');
     const explorerPanel = $('#dataExplorerPanel');
-    
-    // Slide out load panel
-    loadPanel.classList.add('slide-out');
-    
-    // Show and slide in explorer panel
-    explorerPanel.style.display = 'block';
-    setTimeout(() => {
-    explorerPanel.classList.add('slide-in');
-    
-    // Initialize explorer content
-    initializeDataExplorer();
-    }, 50);
+
+    // Start transition immediately (better UX)
+
+    try {
+        // Wait for data to load
+        await initializeDataExplorer();
+
+        // Show explorer only after ready
+        loadPanel.classList.add('slide-out');
+        explorerPanel.style.display = 'block';
+
+        setTimeout(() => {
+            explorerPanel.classList.add('slide-in');
+        }, 50);
+
+    } catch (error) {
+        console.error('Failed to initialize data explorer:', error);
+        alert('Failed to load data. Please try again.');
+        
+        // Optional: revert UI
+        loadPanel.classList.remove('slide-out');
+    }
 }
 
 function hideDataExplorer() {
@@ -42,18 +52,23 @@ async function initializeDataExplorer() {
     
     if (response.status === 'success' && response.data) {
         const datasetInfo = response.data;
-        
+        localStorage.setItem("features", JSON.stringify(datasetInfo.features));
+
         // Populate attributes list (checkboxes)
         populateProtectedAttributesList(datasetInfo.features || []);
         populateTargetAttributesList(datasetInfo.features || []);
-
-        // Get the selected protected and target attributes (priority ones will be auto-selected)
-        const selectedProtectedAttrs = getSelectedProtectedAttributes();
-        const selectedTargetAttrs = getSelectedTargetAttributes();
         
-        // Update the display bar with selected attributes
+        //Call updates just to clear out the display 
         updateProtectedAttrDisplay();
         updateTargetAttrDisplay();
+
+        protectedAttrs = getSelectedProtectedAttributes();
+        targetAttrs = getSelectedTargetAttributes();
+
+        displayBiasOverviewLoad();
+        displayBiasOverview(protectedAttrs, targetAttrs);
+
+        $('#featureDistributions').innerHTML = '';
         
         // Setup modal event listeners
         $('#btnOpenAttrModal').addEventListener('click', openAttrModal);
@@ -125,23 +140,17 @@ function populateProtectedAttributesList(features) {
         label.textContent = attr;
         
         // Toggle on click
-        itemDiv.addEventListener('click', (e) => {
-            if (e.target !== checkbox) {
-            checkbox.checked = !checkbox.checked;
-            }
-            if (checkbox.checked) {
-            itemDiv.classList.add('checked');
-            } else {
-            itemDiv.classList.remove('checked');
-            }
-        });
-        
         checkbox.addEventListener('change', () => {
-            if (checkbox.checked) {
-            itemDiv.classList.add('checked');
-            } else {
-            itemDiv.classList.remove('checked');
+            itemDiv.classList.toggle('checked', checkbox.checked);
+        });
+
+        itemDiv.addEventListener('click', (e) => {
+            if (e.target === checkbox || e.target.tagName === 'LABEL') {
+                return;
             }
+
+            checkbox.checked = !checkbox.checked;
+            checkbox.dispatchEvent(new Event('change'));
         });
         
         itemDiv.appendChild(checkbox);
@@ -260,42 +269,38 @@ function updateBiasScoreCircle(score) {
     description.textContent = getBiasScoreDescription(score);
 }
 
+async function displayBiasOverviewLoad(){
+  $('#metricSP').textContent = '--';
+  $('#metricEO').textContent = '--';
+  $('#metricEOdds').textContent = '--';
+  $('#metricPP').textContent = '--';
+  $('#biasScoreText').textContent = '--';
+  $('#biasScoreText').style.fill = 'rgb(100, 116, 139)';
+  $('#biasScoreDescription').textContent = 'Loading';
+
+  // Reset circle
+  const circle = $('#biasScoreProgress');
+  circle.style.strokeDashoffset = '534.07';
+  circle.style.stroke = '#10b981';
+}
+
 async function displayBiasOverview(protectedAttrs, targetAttrs) {
     // Get all metric cards and score container
     const metricCards = document.querySelectorAll('.metric-card-small');
-    const scoreContainer = $('.bias-score-container');
-    
+    const scoreContainer = $('.bias-score-container');    
+
     // Handle both array and single value for backward compatibility
     if (protectedAttrs.length === 0 || !targetAttrs || !state.datasetId) {
-        // Display placeholder values if no protected attributes selected
-        $('#metricSP').textContent = '--';
-        $('#metricEO').textContent = '--';
-        $('#metricEOdds').textContent = '--';
-        $('#metricPP').textContent = '--';
-        $('#biasScoreText').textContent = '--';
         $('#biasScoreDescription').textContent = 'Select protected attributes to calculate bias';
-        
-        // Reset circle
-        const circle = $('#biasScoreProgress');
-        circle.style.strokeDashoffset = '534.07';
-        circle.style.stroke = '#10b981';
-        
+        // Display placeholder values if no protected attributes selected        
         return;
     }
-    
-    $('#biasScoreDescription').textContent = 'Loading...';
 
     try {
     // Add loading state
     metricCards.forEach(card => card.classList.add('loading'));
     scoreContainer.classList.add('loading');
     
-    // Call backend with array of protected attributes
-    console.log('[DEBUG] getBiasMetrics params:', {
-        datasetId: state.datasetId,
-        protectedAttrs,
-        targetAttrs
-    });
     const response = await api.getBiasMetrics(state.datasetId, protectedAttrs, targetAttrs);
     
     if (response.status === 'success' && response.data && response.data.metrics) {
